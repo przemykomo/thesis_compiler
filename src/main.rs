@@ -1,0 +1,41 @@
+pub mod lexer;
+pub mod ast;
+use crate::lexer::Token;
+use logos::Logos;
+
+fn main() {
+    let source = r"
+fn extern_fn(arg: MyStruct, num: i32) -> bool;
+fn other_fn();
+
+struct MyStruct {
+    a: bool,
+    b: f32,
+    c: i32
+}
+
+public fn main() -> i32 {
+    let my_struct: MyStruct = MyStruct {
+        a: true,
+        b: 3.14,
+        c: 8
+    };
+
+    let ret: bool = extern_fn(my_struct, 5);
+    if ret {
+        other_fn();
+    }
+
+    return 0;
+}
+";
+    let lex = Token::lexer(source).spanned();
+
+    for (token, span) in lex {
+        if let Ok(token) = token {
+            dbg!(token);
+        } else {
+            println!("Error, unrecognized token: `{}`", &source[span]);
+        }
+    }
+}
