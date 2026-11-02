@@ -1,4 +1,6 @@
-use std::range::Range;
+use std::ops::Range;
+
+use crate::diagnostics::Diagnostic;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Span<T> {
@@ -8,33 +10,34 @@ pub struct Span<T> {
 
 #[derive(Debug)]
 pub struct ParsedFile<'a> {
-    pub functions: Vec<FunDecl<'a>>,
-    pub structs: Vec<StructDecl<'a>>,
-    // pub diagnostics: Vec<Diagnostic>
+    pub functions: Vec<FnDecl>,
+    pub structs: Vec<StructDecl>,
+    pub source: &'a str,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Debug)]
-pub struct StructDecl<'a> {
-    pub ident: Span<&'a str>,
-    pub fields: Vec<FieldDecl<'a>>,
+pub struct StructDecl {
+    pub ident: Range<usize>,
+    pub fields: Vec<FieldDecl>,
 }
 
 #[derive(Debug)]
-pub struct FunDecl<'a> {
-    pub ident: Span<&'a str>,
-    pub return_ty: Type<'a>,
-    pub args: Vec<FieldDecl<'a>>,
-    pub body: Option<Vec<Statement<'a>>>,
+pub struct FnDecl {
+    pub ident: Range<usize>,
+    pub return_ty: Type,
+    pub args: Vec<FieldDecl>,
+    pub body: Option<Vec<Statement>>,
 }
 
 #[derive(Debug)]
-pub struct FieldDecl<'a> {
-    pub ident: Span<&'a str>,
-    pub ty: Type<'a>,
+pub struct FieldDecl {
+    pub ident: Range<usize>,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Type<'a> {
+pub enum Type {
     UnsizedInt,
     I8,
     U8,
@@ -50,83 +53,93 @@ pub enum Type<'a> {
     F64,
 
     Char,
-    Pointer(Box<Type<'a>>),
+    Pointer(Box<Type>),
     Boolean,
     Void,
-    Struct(Span<&'a str>),
+    Struct(Range<usize>),
 }
 
 #[derive(Debug)]
-pub enum Statement<'a> {
+pub enum Statement {
     Let {
-        ident: Span<&'a str>,
-        expr: Option<Span<Expr<'a>>>,
-        ty: Type<'a>,
+        ident: Range<usize>,
+        expr: Option<Expr>,
+        ty: Option<Type>,
     },
     If {
-        expr: Span<Expr<'a>>,
-        body: Vec<Statement<'a>>,
-        else_body: Option<Vec<Statement<'a>>>,
+        expr: Expr,
+        body: Vec<Statement>,
+        else_body: Option<Vec<Statement>>,
     },
     While {
-        expr: Span<Expr<'a>>,
-        body: Vec<Statement<'a>>,
+        expr: Expr,
+        body: Vec<Statement>,
     },
-    Return(Span<Expr<'a>>),
-    Expr(Span<Expr<'a>>),
+    Return(Some(Expr)),
     Break,
     Continue,
+    Expr(Expr),
 }
 
-// TODO: FieldExpr moved into BinaryExpr, update grammar
 #[derive(Debug)]
-pub enum Expr<'a> {
-    IntLiteral(i128),
-    CharLiteral(char),
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Range<usize>,
+}
+
+// FieldExpr can't be moved into BinaryExpr, since the rhs must be an identifier of a member, not a
+// generic expression
+#[derive(Debug)]
+pub enum ExprKind {
+    IntLiteral(Range<usize>),
+    CharLiteral(Range<usize>),
     BoolLiteral(bool),
-    FloatLiteral(f64),
-    StringLiteral(&'a str),
-    Call(Span<FunctionCall<'a>>),
+    FloatLiteral(Range<usize>),
+    StringLiteral(Range<usize>),
+    Call(Span<FunctionCall>),
     Binary {
-        lhs: Box<Span<Expr<'a>>>,
-        rhs: Box<Span<Expr<'a>>>,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
         operator: BinaryOp,
     },
     Unary {
-        expr: Box<Span<Expr<'a>>>,
+        expr: Box<Expr>,
         operator: UnaryOp,
     },
     Cast {
-        expr: Box<Span<Expr<'a>>>,
-        ty: Type<'a>,
+        expr: Box<Expr>,
+        ty: Type,
     },
     StructLiteral {
-        ident: Span<&'a str>,
-        members: Vec<(Span<&'a str>, Option<Span<Expr<'a>>>)>,
+        ident: Range<usize>,
+        members: Vec<(Range<usize>, Option<Expr>)>,
     },
-    Identifier(Span<&'a str>), //TODO add to grammar
+    Identifier(Range<usize>),
+    Field {
+        expr: Box<Expr>,
+        member: Range<usize>,
+    },
     Index {
-        expr: Box<Span<Expr<'a>>>,
-        index: Box<Span<Expr<'a>>>,
+        expr: Box<Expr>,
+        index: Box<Expr>,
     },
 }
 
 #[derive(Debug)]
-pub struct FunctionCall<'a> {
-    pub ident: Span<&'a str>,
-    pub args: Vec<Span<Expr<'a>>>,
+pub struct FunctionCall {
+    pub ident: Range<usize>,
+    pub args: Vec<Expr>,
 }
 
+// No bitwise operator for now
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
     Arithmetic(ArithmeticOp),
     Comparison(ComparisonOp),
     Assign,
     ArithmeticAssign(ArithmeticOp),
-    MemberAccess,
 }
 
-//TODO remove bitwise operators from the language grammar?
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArithmeticOp {
     Add,

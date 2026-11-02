@@ -1,6 +1,8 @@
-pub mod lexer;
 pub mod ast;
-use crate::lexer::Token;
+pub mod diagnostics;
+pub mod lexer;
+pub mod parser;
+use crate::{lexer::Token, parser::parse_tokens};
 use logos::Logos;
 
 fn main() {
@@ -31,11 +33,20 @@ public fn main() -> i32 {
 ";
     let lex = Token::lexer(source).spanned();
 
+    let mut tokens = Vec::new();
+    let mut err = false;
     for (token, span) in lex {
         if let Ok(token) = token {
-            dbg!(token);
+            tokens.push((token, span));
         } else {
+            err = true;
             println!("Error, unrecognized token: `{}`", &source[span]);
         }
     }
+
+    if err {
+        return;
+    }
+
+    let parsed_file = parse_tokens(tokens, source);
 }

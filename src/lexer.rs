@@ -1,6 +1,6 @@
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq)]
+#[derive(Logos, Debug, PartialEq, Copy, Clone)]
 #[logos(skip r"[ \t\n\f]+")]
 #[logos(skip(r"//[^\n]*", allow_greedy = true))] // comments
 #[logos(skip(r"/\*(?:[^*]|\*[^/])*\*/", allow_greedy = true))] /* comments */
@@ -29,6 +29,8 @@ pub enum Token {
     Char,
     #[token("bool")]
     Bool,
+    #[token("void")]
+    Void,
 
     #[token("if")]
     If,
@@ -63,8 +65,10 @@ pub enum Token {
     FloatLit,
     #[regex(r"(\d+)|(0x[0-9a-fA-F]+)|(0b[01]+)", priority = 3)]
     IntLit,
-    #[regex("true|false")]
-    BoolLiteral,
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
     #[regex(r#""(\.|[^"\\])*""#)]
     StringLiteral,
     // https://www.unicode.org/reports/tr31/
@@ -115,4 +119,8 @@ pub enum Token {
     RBracket,
     #[token(":")]
     Colon,
+    #[token("->")]
+    Arrow,
+    #[token(".")]
+    Period,
 }
