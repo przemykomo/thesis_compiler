@@ -550,7 +550,14 @@ fn parse_expr_atom(ast: &mut ParsedFile<'_>, tokens: TokenIter, condition: bool)
             expect(Token::RParen, ast, tokens)?;
             return Some(expr);
         }
-        _ => None,
+        _ => {
+            //TODO expected expression or a statement?
+            ast.diagnostics.push(Diagnostic::ExpectedExpression {
+                unexpected: literal_token.0,
+                range: literal_token.1.clone(),
+            });
+            None
+        }
     };
 
     if let Some(kind) = expr {

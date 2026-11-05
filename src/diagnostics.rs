@@ -17,5 +17,9 @@ pub enum Diagnostic {
         unexpected: Token,
         range: Range<usize>,
     },
+    ExpectedExpression {
+        unexpected: Token,
+        range: Range<usize>,
+    },
     EOF,
 }

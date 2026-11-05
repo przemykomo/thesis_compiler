@@ -2,35 +2,17 @@ pub mod ast;
 pub mod diagnostics;
 pub mod lexer;
 pub mod parser;
+use std::fs;
+
 use crate::{diagnostics::Diagnostic::*, lexer::Token, parser::parse_tokens};
 use logos::Logos;
 
 fn main() {
-    let source = r"
-fn extern_fn(arg: MyStruct, num: i32) -> bool;
-fn other_fn();
+    //TODO cli args
 
-struct MyStruct {
-    a: bool,
-    b: f32,
-    c: i32
-}
-
-fn main() -> i32 {
-    let my_struct: MyStruct = MyStruct {
-        a: true,
-        b: 3.14,
-        c: 8
-    };
-
-    let ret: bool = extern_fn(my_struct, 5);
-    if ret {
-        other_fn();
-    }
-
-    return 0;
-}
-";
+    let source_file = "test/sample.tc";
+    let source =
+        fs::read_to_string(&source_file).expect("Should have been able to read the source file.");
 
     let mut lines = vec![0];
     lines.extend(
@@ -41,7 +23,7 @@ fn main() -> i32 {
     );
     lines.push(source.len());
 
-    let lex = Token::lexer(source).spanned();
+    let lex = Token::lexer(&source).spanned();
 
     let mut tokens = Vec::new();
     let mut err = false;
@@ -58,7 +40,10 @@ fn main() -> i32 {
         return;
     }
 
-    let parsed_file = parse_tokens(tokens, source);
+    let parsed_file = parse_tokens(tokens, &source);
+    if parsed_file.diagnostics.is_empty() {
+        dbg!(parsed_file.functions);
+    }
 
     for diagnostic in parsed_file.diagnostics {
         match diagnostic {
@@ -107,6 +92,16 @@ fn main() -> i32 {
                 lines.len() - 2,
                 &source[lines[lines.len() - 2]..lines[lines.len() - 1]]
             ),
+            ExpectedExpression { unexpected, range } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected an expression. line {}: `{}`\n{}",
+                    unexpected,
+                    line - 1,
+                    &source[range],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
         }
     }
 }
