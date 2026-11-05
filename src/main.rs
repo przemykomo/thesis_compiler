@@ -2,7 +2,7 @@ pub mod ast;
 pub mod diagnostics;
 pub mod lexer;
 pub mod parser;
-use crate::{lexer::Token, parser::parse_tokens};
+use crate::{diagnostics::Diagnostic::*, lexer::Token, parser::parse_tokens};
 use logos::Logos;
 
 fn main() {
@@ -16,7 +16,7 @@ struct MyStruct {
     c: i32
 }
 
-public fn main() -> i32 {
+fn main() -> i32 {
     let my_struct: MyStruct = MyStruct {
         a: true,
         b: 3.14,
@@ -31,6 +31,16 @@ public fn main() -> i32 {
     return 0;
 }
 ";
+
+    let mut lines = vec![0];
+    lines.extend(
+        source
+            .char_indices()
+            .filter(|(_, c)| *c == '\n')
+            .map(|(i, _)| i + 1),
+    );
+    lines.push(source.len());
+
     let lex = Token::lexer(source).spanned();
 
     let mut tokens = Vec::new();
@@ -49,4 +59,54 @@ public fn main() -> i32 {
     }
 
     let parsed_file = parse_tokens(tokens, source);
+
+    for diagnostic in parsed_file.diagnostics {
+        match diagnostic {
+            UnexpectedToken {
+                unexpected,
+                range,
+                expected,
+            } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected {:#?}. line {}: `{}`\n{}",
+                    unexpected,
+                    expected,
+                    line - 1,
+                    &source[range],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            UnexpectedToken2 {
+                unexpected,
+                range,
+                expected,
+            } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected {}. line {}: `{}`\n{}",
+                    unexpected,
+                    expected,
+                    line - 1,
+                    &source[range],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            ExpectedType { unexpected, range } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected a type. line {}: `{}`\n{}",
+                    unexpected,
+                    line - 1,
+                    &source[range],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            EOF => println!(
+                "Unexpected end of file on line {}\n{}",
+                lines.len() - 2,
+                &source[lines[lines.len() - 2]..lines[lines.len() - 1]]
+            ),
+        }
+    }
 }

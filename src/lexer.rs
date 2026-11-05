@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq, Copy, Clone)]
@@ -83,6 +85,20 @@ pub enum Token {
     Asterisk,
     #[token("/")]
     Slash,
+    #[token("%")]
+    Percent,
+
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    AsteriskEq,
+    #[token("/=")]
+    SlashEq,
+    #[token("%=")]
+    PercentEq,
+
     #[token("==")]
     EqEq,
     #[token("!=")]
@@ -123,4 +139,75 @@ pub enum Token {
     Arrow,
     #[token(".")]
     Period,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Token::I8 => "i8",
+            Token::I16 => "i16",
+            Token::I32 => "i32",
+            Token::I64 => "i64",
+            Token::U8 => "u8",
+            Token::U16 => "u16",
+            Token::U32 => "u32",
+            Token::U64 => "u64",
+            Token::F32 => "f32",
+            Token::F64 => "f64",
+            Token::Char => "char",
+            Token::Bool => "bool",
+            Token::Void => "void",
+            Token::If => "if",
+            Token::Else => "else",
+            Token::While => "while",
+            Token::Return => "return",
+            Token::Fn => "fn",
+            Token::Let => "let",
+            Token::Break => "break",
+            Token::Continue => "continue",
+            Token::Struct => "struct",
+            Token::As => "as",
+            Token::Semicolon => ";",
+            Token::Comma => ",",
+            Token::CharLit => "a char literal",
+            Token::FloatLit => "a float literal",
+            Token::IntLit => "an integer literal",
+            Token::True => "true",
+            Token::False => "false",
+            Token::StringLiteral => "a string literal",
+            Token::Ident => "an indentifier",
+            Token::Plus => "+",
+            Token::Minus => "-",
+            Token::Asterisk => "*",
+            Token::Slash => "/",
+            Token::Percent => "%",
+            Token::PlusEq => "+=",
+            Token::MinusEq => "-=",
+            Token::AsteriskEq => "*=",
+            Token::SlashEq => "/=",
+            Token::PercentEq => "%=",
+            Token::EqEq => "==",
+            Token::NotEq => "!=",
+            Token::Gte => ">=",
+            Token::Gt => ">",
+            Token::Lte => "<=",
+            Token::Lt => "<",
+            Token::And => "&&",
+            Token::Or => "||",
+            Token::Bang => "!",
+            Token::Ampersand => "&",
+            Token::Eq => "=",
+            Token::LParen => "(",
+            Token::RParen => ")",
+            Token::LBrace => "{",
+            Token::RBrace => "}",
+            Token::LBracket => "[",
+            Token::RBracket => "]",
+            Token::Colon => ":",
+            Token::Arrow => "->",
+            Token::Period => ".",
+        };
+
+        write!(f, "{s}")
+    }
 }

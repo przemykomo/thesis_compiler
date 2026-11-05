@@ -75,7 +75,7 @@ pub enum Statement {
         expr: Expr,
         body: Vec<Statement>,
     },
-    Return(Some(Expr)),
+    Return(Option<Expr>),
     Break,
     Continue,
     Expr(Expr),
@@ -89,6 +89,7 @@ pub struct Expr {
 
 // FieldExpr can't be moved into BinaryExpr, since the rhs must be an identifier of a member, not a
 // generic expression
+// TODO Maybe just remove ranges from here as Expr has a range already?
 #[derive(Debug)]
 pub enum ExprKind {
     IntLiteral(Range<usize>),
@@ -96,15 +97,18 @@ pub enum ExprKind {
     BoolLiteral(bool),
     FloatLiteral(Range<usize>),
     StringLiteral(Range<usize>),
-    Call(Span<FunctionCall>),
+    Call {
+        lhs: Box<Expr>,
+        args: Vec<Expr>,
+    },
     Binary {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
-        operator: BinaryOp,
+        op: BinaryOp,
     },
     Unary {
         expr: Box<Expr>,
-        operator: UnaryOp,
+        op: UnaryOp,
     },
     Cast {
         expr: Box<Expr>,
@@ -112,35 +116,37 @@ pub enum ExprKind {
     },
     StructLiteral {
         ident: Range<usize>,
-        members: Vec<(Range<usize>, Option<Expr>)>,
+        fields: Vec<(Range<usize>, Expr)>,
     },
     Identifier(Range<usize>),
     Field {
         expr: Box<Expr>,
         member: Range<usize>,
     },
+    //TODO: This might be just merged into the Binary expression
     Index {
         expr: Box<Expr>,
         index: Box<Expr>,
     },
 }
 
-#[derive(Debug)]
-pub struct FunctionCall {
-    pub ident: Range<usize>,
-    pub args: Vec<Expr>,
-}
-
 // No bitwise operator for now
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum BinaryOp {
     Arithmetic(ArithmeticOp),
     Comparison(ComparisonOp),
+    Boolean(BooleanOp),
     Assign,
     ArithmeticAssign(ArithmeticOp),
+
+    // Special operators to make expr parser simpler
+    Index,
+    Call,
+    FieldAccess,
+    Cast,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum ArithmeticOp {
     Add,
     Sub,
@@ -149,17 +155,23 @@ pub enum ArithmeticOp {
     Rem,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum ComparisonOp {
     Eq,
-    Larger,
-    Smaller,
-    LargerEq,
-    SmallerEq,
+    Greater,
+    Less,
+    GreaterEq,
+    LessEq,
     NotEq,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum BooleanOp {
+    And,
+    Or,
+}
+
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum UnaryOp {
     Minus,
     Plus,
