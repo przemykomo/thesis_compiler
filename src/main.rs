@@ -1,10 +1,16 @@
 pub mod ast;
+pub mod csa;
 pub mod diagnostics;
 pub mod lexer;
 pub mod parser;
 use std::fs;
 
-use crate::{diagnostics::Diagnostic::*, lexer::Token, parser::parse_tokens};
+use crate::{
+    csa::perform_csa,
+    diagnostics::Diagnostic::{self, *},
+    lexer::Token,
+    parser::parse_tokens,
+};
 use logos::Logos;
 
 fn main() {
@@ -41,11 +47,21 @@ fn main() {
     }
 
     let parsed_file = parse_tokens(tokens, &source);
-    if parsed_file.diagnostics.is_empty() {
-        dbg!(parsed_file.functions);
+    if !parsed_file.diagnostics.is_empty() {
+        print_diagnostics(&parsed_file.diagnostics, &lines, &source);
+        return;
     }
 
-    for diagnostic in parsed_file.diagnostics {
+    // let typed_ast = perform_csa(parsed_file, &source);
+    //
+    // if !typed_ast.diagnostics.is_empty() {
+    //     print_diagnostics(&typed_ast.diagnostics, &lines, &source);
+    //     return;
+    // }
+}
+
+fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &str) {
+    for diagnostic in diagnostics {
         match diagnostic {
             UnexpectedToken {
                 unexpected,
@@ -58,7 +74,7 @@ fn main() {
                     unexpected,
                     expected,
                     line - 1,
-                    &source[range],
+                    &source[range.clone()],
                     &source[lines[line - 1]..lines[line]]
                 );
             }
@@ -73,7 +89,7 @@ fn main() {
                     unexpected,
                     expected,
                     line - 1,
-                    &source[range],
+                    &source[range.clone()],
                     &source[lines[line - 1]..lines[line]]
                 );
             }
@@ -83,7 +99,7 @@ fn main() {
                     "Unexpected token: {}, expected a type. line {}: `{}`\n{}",
                     unexpected,
                     line - 1,
-                    &source[range],
+                    &source[range.clone()],
                     &source[lines[line - 1]..lines[line]]
                 );
             }
@@ -98,9 +114,18 @@ fn main() {
                     "Unexpected token: {}, expected an expression. line {}: `{}`\n{}",
                     unexpected,
                     line - 1,
-                    &source[range],
+                    &source[range.clone()],
                     &source[lines[line - 1]..lines[line]]
                 );
+            }
+            NoTypeNamed { range } => {
+                dbg!(diagnostic);
+            }
+            RecursiveStruct { range } => {
+                dbg!(diagnostic);
+            }
+            DuplicateDefinition { range, old } => {
+                dbg!(diagnostic);
             }
         }
     }

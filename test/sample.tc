@@ -1,3 +1,13 @@
+struct Test {
+    f: Test2
+}
+
+struct Test2 {
+    f: Test
+}
+
 fn main() -> i32 {
+    let a: i32 = 5;
+    a = 8;
     return 0;
 }

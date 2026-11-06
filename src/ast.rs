@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 
 use crate::diagnostics::Diagnostic;
 
@@ -10,9 +10,8 @@ pub struct Span<T> {
 
 #[derive(Debug)]
 pub struct ParsedFile<'a> {
-    pub functions: Vec<FnDecl>,
-    pub structs: Vec<StructDecl>,
-    pub source: &'a str,
+    pub functions: HashMap<&'a str, FnDecl>,
+    pub structs: HashMap<&'a str, StructDecl>,
     pub diagnostics: Vec<Diagnostic>,
 }
 

@@ -22,4 +22,15 @@ pub enum Diagnostic {
         range: Range<usize>,
     },
     EOF,
+    DuplicateDefinition {
+        range: Range<usize>,
+        old: Range<usize>,
+    },
+
+    NoTypeNamed {
+        range: Range<usize>,
+    },
+    RecursiveStruct {
+        range: Range<usize>,
+    },
 }

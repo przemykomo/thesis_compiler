@@ -1,4 +1,4 @@
-use std::{iter::Peekable, ops::Range, slice::Iter};
+use std::{collections::HashMap, iter::Peekable, ops::Range, slice::Iter};
 
 use crate::{ast::*, diagnostics::Diagnostic, lexer::Token};
 
@@ -8,15 +8,14 @@ const FN_BODY_FIRST: [Token; 2] = [Token::Semicolon, Token::LBrace];
 
 pub fn parse_tokens<'a>(tokens: Vec<(Token, Range<usize>)>, source: &'a str) -> ParsedFile<'a> {
     let mut ast = ParsedFile {
-        functions: Vec::new(),
-        structs: Vec::new(),
-        source,
+        functions: HashMap::new(),
+        structs: HashMap::new(),
         diagnostics: Vec::new(),
     };
 
     let mut tokens = tokens.iter().peekable();
     while tokens.peek().is_some() {
-        if parse_item(&mut ast, &mut tokens).is_none() {
+        if parse_item(&mut ast, &mut tokens, source).is_none() {
             if tokens.peek().is_none() {
                 //TODO idk if this won't produce some false EOF diagnostics sometimes
                 ast.diagnostics.push(Diagnostic::EOF);
@@ -28,11 +27,11 @@ pub fn parse_tokens<'a>(tokens: Vec<(Token, Range<usize>)>, source: &'a str) -> 
     ast
 }
 
-fn parse_item(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<()> {
+fn parse_item<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) -> Option<()> {
     let token = tokens.next().unwrap();
     match token.0 {
-        Token::Fn => parse_fn(ast, tokens)?,
-        Token::Struct => parse_struct(ast, tokens)?,
+        Token::Fn => parse_fn(ast, tokens, source)?,
+        Token::Struct => parse_struct(ast, tokens, source)?,
         _ => {
             ast.diagnostics.push(Diagnostic::UnexpectedToken {
                 unexpected: token.0,
@@ -80,15 +79,23 @@ fn expect(
     None
 }
 
-fn parse_struct(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<()> {
+fn parse_struct<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) -> Option<()> {
     let ident = expect(Token::Ident, ast, tokens)?;
     expect(Token::LBrace, ast, tokens)?;
     let fields = parse_field_decl_list(ast, tokens, Token::RBrace)?;
 
-    ast.structs.push(StructDecl {
-        ident: ident.1,
-        fields,
-    });
+    if let Some(old) = ast.structs.insert(
+        &source[ident.1.clone()],
+        StructDecl {
+            ident: ident.1.clone(),
+            fields,
+        },
+    ) {
+        ast.diagnostics.push(Diagnostic::DuplicateDefinition {
+            range: ident.1,
+            old: old.ident,
+        });
+    }
     Some(())
 }
 
@@ -159,7 +166,7 @@ fn parse_type(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Type, Rang
     Some((ty, token.1.clone()))
 }
 
-fn parse_fn(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<()> {
+fn parse_fn<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) -> Option<()> {
     let ident = expect(Token::Ident, ast, tokens)?;
     expect(Token::LParen, ast, tokens)?;
     let args = parse_field_decl_list(ast, tokens, Token::RParen)?;
@@ -171,10 +178,16 @@ fn parse_fn(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<()> {
         }
     };
 
-    let token = tokens.next()?;
+    let token = tokens.peek()?;
     let body = match token.0 {
-        Token::Semicolon => None,
-        Token::LBrace => parse_scope(ast, tokens),
+        Token::Semicolon => {
+            tokens.next();
+            None
+        }
+        Token::LBrace => {
+            tokens.next();
+            Some(parse_scope(ast, tokens)?)
+        }
         _ => {
             ast.diagnostics.push(Diagnostic::UnexpectedToken {
                 unexpected: token.0,
@@ -187,12 +200,20 @@ fn parse_fn(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<()> {
         }
     };
 
-    ast.functions.push(FnDecl {
-        ident: ident.1,
-        return_ty,
-        args,
-        body,
-    });
+    if let Some(old) = ast.functions.insert(
+        &source[ident.1.clone()],
+        FnDecl {
+            ident: ident.1.clone(),
+            return_ty,
+            args,
+            body,
+        },
+    ) {
+        ast.diagnostics.push(Diagnostic::DuplicateDefinition {
+            range: ident.1,
+            old: old.ident,
+        });
+    }
     Some(())
 }
 
