@@ -309,21 +309,24 @@ fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(State
             Statement::While { expr, body }
         }
         Token::Return => {
+            let span = token.1.clone();
             tokens.next();
             let expr = if tokens.peek()?.0 == Token::Semicolon {
                 None
             } else {
                 Some(parse_expr(ast, tokens, false)?)
             };
-            Statement::Return(expr)
+            Statement::Return { span, expr }
         }
         Token::Break => {
+            let span = token.1.clone();
             tokens.next();
-            Statement::Break
+            Statement::Break(span)
         }
         Token::Continue => {
+            let span = token.1.clone();
             tokens.next();
-            Statement::Continue
+            Statement::Continue(span)
         }
         _ => Statement::Expr(parse_expr(ast, tokens, false)?),
     };
@@ -346,7 +349,6 @@ fn parse_expr_int(
     let unary_op_token = tokens.peek()?;
     let unary_op = match unary_op_token.0 {
         Token::Minus => Some(UnaryOp::Minus),
-        Token::Plus => Some(UnaryOp::Plus),
         Token::Bang => Some(UnaryOp::Not),
         Token::Ampersand => Some(UnaryOp::AddressOf),
         Token::Asterisk => Some(UnaryOp::Deref),

@@ -52,81 +52,82 @@ fn main() {
         return;
     }
 
-    // let typed_ast = perform_csa(parsed_file, &source);
-    //
-    // if !typed_ast.diagnostics.is_empty() {
-    //     print_diagnostics(&typed_ast.diagnostics, &lines, &source);
-    //     return;
-    // }
+    let typed_ast = perform_csa(parsed_file, &source);
+
+    if !typed_ast.diagnostics.is_empty() {
+        print_diagnostics(&typed_ast.diagnostics, &lines, &source);
+        return;
+    }
 }
 
 fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &str) {
     for diagnostic in diagnostics {
-        match diagnostic {
-            UnexpectedToken {
-                unexpected,
-                range,
-                expected,
-            } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected {:#?}. line {}: `{}`\n{}",
-                    unexpected,
-                    expected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
-            }
-            UnexpectedToken2 {
-                unexpected,
-                range,
-                expected,
-            } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected {}. line {}: `{}`\n{}",
-                    unexpected,
-                    expected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
-            }
-            ExpectedType { unexpected, range } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected a type. line {}: `{}`\n{}",
-                    unexpected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
-            }
-            EOF => println!(
-                "Unexpected end of file on line {}\n{}",
-                lines.len() - 2,
-                &source[lines[lines.len() - 2]..lines[lines.len() - 1]]
-            ),
-            ExpectedExpression { unexpected, range } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected an expression. line {}: `{}`\n{}",
-                    unexpected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
-            }
-            NoTypeNamed { range } => {
-                dbg!(diagnostic);
-            }
-            RecursiveStruct { range } => {
-                dbg!(diagnostic);
-            }
-            DuplicateDefinition { range, old } => {
-                dbg!(diagnostic);
-            }
-        }
+        dbg!(diagnostic);
+        // match diagnostic {
+        //     UnexpectedToken {
+        //         unexpected,
+        //         range,
+        //         expected,
+        //     } => {
+        //         let line = lines.partition_point(|&l| l < range.start);
+        //         println!(
+        //             "Unexpected token: {}, expected {:#?}. line {}: `{}`\n{}",
+        //             unexpected,
+        //             expected,
+        //             line - 1,
+        //             &source[range.clone()],
+        //             &source[lines[line - 1]..lines[line]]
+        //         );
+        //     }
+        //     UnexpectedToken2 {
+        //         unexpected,
+        //         range,
+        //         expected,
+        //     } => {
+        //         let line = lines.partition_point(|&l| l < range.start);
+        //         println!(
+        //             "Unexpected token: {}, expected {}. line {}: `{}`\n{}",
+        //             unexpected,
+        //             expected,
+        //             line - 1,
+        //             &source[range.clone()],
+        //             &source[lines[line - 1]..lines[line]]
+        //         );
+        //     }
+        //     ExpectedType { unexpected, range } => {
+        //         let line = lines.partition_point(|&l| l < range.start);
+        //         println!(
+        //             "Unexpected token: {}, expected a type. line {}: `{}`\n{}",
+        //             unexpected,
+        //             line - 1,
+        //             &source[range.clone()],
+        //             &source[lines[line - 1]..lines[line]]
+        //         );
+        //     }
+        //     EOF => println!(
+        //         "Unexpected end of file on line {}\n{}",
+        //         lines.len() - 2,
+        //         &source[lines[lines.len() - 2]..lines[lines.len() - 1]]
+        //     ),
+        //     ExpectedExpression { unexpected, range } => {
+        //         let line = lines.partition_point(|&l| l < range.start);
+        //         println!(
+        //             "Unexpected token: {}, expected an expression. line {}: `{}`\n{}",
+        //             unexpected,
+        //             line - 1,
+        //             &source[range.clone()],
+        //             &source[lines[line - 1]..lines[line]]
+        //         );
+        //     }
+        //     NoTypeNamed { range } => {
+        //         dbg!(diagnostic);
+        //     }
+        //     RecursiveStruct { range } => {
+        //         dbg!(diagnostic);
+        //     }
+        //     DuplicateDefinition { range, old } => {
+        //         dbg!(diagnostic);
+        //     }
+        // }
     }
 }

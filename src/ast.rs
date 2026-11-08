@@ -29,10 +29,15 @@ pub struct FnDecl {
     pub body: Option<Vec<Statement>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FieldDecl {
     pub ident: Range<usize>,
     pub ty: Type,
+}
+impl PartialEq for FieldDecl {
+    fn eq(&self, other: &Self) -> bool {
+        self.ty == other.ty
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,9 +58,46 @@ pub enum Type {
 
     Char,
     Pointer(Box<Type>),
+    //TODO Function pointers
+    Fn {
+        args: Vec<FieldDecl>,
+        return_ty: Box<Type>,
+    },
     Boolean,
     Void,
     Struct(Range<usize>),
+}
+
+impl Type {
+    pub fn is_numeric(&self) -> bool {
+        use Type::*;
+        matches!(
+            self,
+            UnsizedInt | I8 | U8 | I16 | U16 | I32 | U32 | I64 | U64 | UnsizedFloat | F32 | F64
+        )
+    }
+
+    pub fn is_int_char_bool(&self) -> bool {
+        use Type::*;
+        matches!(
+            self,
+            UnsizedInt | I8 | U8 | I16 | U16 | I32 | U32 | I64 | U64 | Char | Boolean
+        )
+    }
+
+    pub fn is_int(&self) -> bool {
+        use Type::*;
+        matches!(
+            self,
+            UnsizedInt | I8 | U8 | I16 | U16 | I32 | U32 | I64 | U64
+        )
+    }
+
+    pub fn is_float(&self) -> bool {
+        use Type::*;
+        // UnsizedInt can be promoted to a float TODO make it clearer
+        matches!(self, UnsizedInt | UnsizedFloat | F32 | F64)
+    }
 }
 
 #[derive(Debug)]
@@ -74,9 +116,12 @@ pub enum Statement {
         expr: Expr,
         body: Vec<Statement>,
     },
-    Return(Option<Expr>),
-    Break,
-    Continue,
+    Return {
+        span: Range<usize>,
+        expr: Option<Expr>,
+    },
+    Break(Range<usize>),
+    Continue(Range<usize>),
     Expr(Expr),
 }
 
@@ -173,7 +218,6 @@ pub enum BooleanOp {
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum UnaryOp {
     Minus,
-    Plus,
     Not,
     AddressOf,
     Deref,
