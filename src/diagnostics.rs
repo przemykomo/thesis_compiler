@@ -36,9 +36,6 @@ pub enum Diagnostic {
     RecursiveStruct {
         range: Range<usize>,
     },
-    NoVariableNamed {
-        range: Range<usize>,
-    },
 
     FunctionDoesntReturn {
         range: Range<usize>,

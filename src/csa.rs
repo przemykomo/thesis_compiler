@@ -2,6 +2,7 @@ use std::{collections::HashMap, ops::Range};
 
 use crate::{ast::*, diagnostics::Diagnostic};
 
+#[derive(Debug)]
 pub struct TypedAST<'a> {
     pub functions: HashMap<&'a str, TypedFn>,
     pub structs: HashMap<&'a str, StructDecl>,
@@ -258,19 +259,13 @@ impl Scope {
         self.visible_vars.push(id);
     }
 
-    pub fn find(
-        &self,
-        ident: Range<usize>,
-        source: &str,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> Option<usize> {
+    pub fn find(&self, ident: Range<usize>, source: &str) -> Option<usize> {
         for visible in &self.visible_vars {
             if &source[self.vars[*visible].ident.clone()] == &source[ident.clone()] {
                 return Some(*visible);
             }
         }
 
-        diagnostics.push(Diagnostic::NoVariableNamed { range: ident });
         None
     }
 }
@@ -842,7 +837,7 @@ fn type_expr(
             }
         }
         ExprKind::Identifier(range) => {
-            if let Some(var) = scope.find(range.clone(), source, diagnostics) {
+            if let Some(var) = scope.find(range.clone(), source) {
                 TypedExpr {
                     kind: TypedExprKind::Variable(var),
                     ty: scope.vars[var].ty.clone(),
