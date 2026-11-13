@@ -225,7 +225,7 @@ pub struct Variable {
     pub ident: Range<usize>,
     //TODO maybe Option<Type> so that if there is an error in the variable definition, I don't
     //generate more errors when accessing the variable later
-    pub ty: Type,
+    pub ty: Option<Type>,
 }
 
 #[derive(Debug)]
@@ -345,7 +345,7 @@ fn type_fn(
     for arg in &decl.args {
         scope.insert(Variable {
             ident: arg.ident.clone(),
-            ty: arg.ty.clone(),
+            ty: Some(arg.ty.clone()),
         });
     }
 
@@ -403,13 +403,17 @@ fn type_block(
                             diagnostics.push(Diagnostic::MissingVariableType {
                                 range: ident.clone(),
                             });
+                            scope.insert(Variable {
+                                ident: ident.clone(),
+                                ty: None,
+                            });
                             continue;
                         }
                     };
 
                     scope.insert(Variable {
                         ident: ident.clone(),
-                        ty: ty.clone(),
+                        ty: Some(ty.clone()),
                     });
                     statements.push(TypedStatement::Let {
                         ident: ident.clone(),
@@ -422,7 +426,7 @@ fn type_block(
                 let Some(mut expr) = type_expr(ast, scope, expr, diagnostics, source) else {
                     scope.insert(Variable {
                         ident: ident.clone(),
-                        ty: ty.clone().unwrap_or(Type::Void), //TODO
+                        ty: ty.clone(),
                     });
                     continue;
                 };
@@ -443,7 +447,7 @@ fn type_block(
 
                 scope.insert(Variable {
                     ident: ident.clone(),
-                    ty: expr.ty.clone(),
+                    ty: Some(expr.ty.clone()),
                 });
 
                 let ty = expr.ty.clone();
@@ -837,7 +841,7 @@ fn type_expr(
             if let Some(var) = scope.find(range.clone(), source) {
                 TypedExpr {
                     kind: TypedExprKind::Variable(var),
-                    ty: scope.vars[var].ty.clone(),
+                    ty: scope.vars[var].ty.clone()?,
                 }
             } else if let Some(function) = ast.functions.get(&source[range.clone()]) {
                 TypedExpr {
