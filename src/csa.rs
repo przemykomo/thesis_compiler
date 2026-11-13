@@ -301,7 +301,19 @@ fn check_recursive_structs<'a>(
 ) {
     stack.push(decl);
     for field in &decl.fields {
-        //TODO check if it's a pointer to a struct for NoTypeNamed recursively
+        let mut tmp = &field.ty;
+        while let Type::Pointer(ty) = tmp {
+            if let Type::Struct(ref ident) = **ty {
+                if !ast.structs.contains_key(&source[ident.clone()]) {
+                    diagnostics.push(Diagnostic::NoTypeNamed {
+                        range: ident.clone(),
+                    });
+                }
+                break;
+            };
+            tmp = ty;
+        }
+
         let Type::Struct(ident) = &field.ty else {
             continue;
         };
