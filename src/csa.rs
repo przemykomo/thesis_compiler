@@ -223,8 +223,6 @@ pub enum PlaceKind {
 #[derive(Debug)]
 pub struct Variable {
     pub ident: Range<usize>,
-    //TODO maybe Option<Type> so that if there is an error in the variable definition, I don't
-    //generate more errors when accessing the variable later
     pub ty: Option<Type>,
 }
 
@@ -910,26 +908,90 @@ fn type_binary_expr(
     let mut rhs = rhs?;
     Some(match op {
         BinaryOp::Arithmetic(op) => {
-            coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan)?;
-            let ty = lhs.ty.clone();
-            TypedExpr {
-                kind: TypedExprKind::Arithmetic {
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                    op,
-                },
-                ty,
+            if let Some(consts) = check_unsized_consts(&mut lhs, &mut rhs) {
+                match consts {
+                    UnsizedVals::Int(l, r) => {
+                        let res = match op {
+                            ArithmeticOp::Add => l + r,
+                            ArithmeticOp::Sub => l - r,
+                            ArithmeticOp::Mul => l * r,
+                            ArithmeticOp::Div => l / r,
+                            ArithmeticOp::Rem => l % r,
+                        };
+                        TypedExpr {
+                            kind: TypedExprKind::IntLiteral(res),
+                            ty: Type::UnsizedInt,
+                        }
+                    }
+                    UnsizedVals::Float(l, r) => {
+                        let res = match op {
+                            ArithmeticOp::Add => l + r,
+                            ArithmeticOp::Sub => l - r,
+                            ArithmeticOp::Mul => l * r,
+                            ArithmeticOp::Div => l / r,
+                            ArithmeticOp::Rem => l % r,
+                        };
+                        TypedExpr {
+                            kind: TypedExprKind::FloatLiteral(res),
+                            ty: Type::UnsizedFloat,
+                        }
+                    }
+                }
+            } else {
+                coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan)?;
+                let ty = lhs.ty.clone();
+                TypedExpr {
+                    kind: TypedExprKind::Arithmetic {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                        op,
+                    },
+                    ty,
+                }
             }
         }
         BinaryOp::Comparison(op) => {
-            coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan)?;
-            TypedExpr {
-                kind: TypedExprKind::Comparison {
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                    op,
-                },
-                ty: Type::Boolean,
+            if let Some(consts) = check_unsized_consts(&mut lhs, &mut rhs) {
+                match consts {
+                    UnsizedVals::Int(l, r) => {
+                        let res = match op {
+                            ComparisonOp::Eq => l == r,
+                            ComparisonOp::Greater => l > r,
+                            ComparisonOp::Less => l < r,
+                            ComparisonOp::GreaterEq => l >= r,
+                            ComparisonOp::LessEq => l <= r,
+                            ComparisonOp::NotEq => l != r,
+                        };
+                        TypedExpr {
+                            kind: TypedExprKind::BoolLiteral(res),
+                            ty: Type::Boolean,
+                        }
+                    }
+                    UnsizedVals::Float(l, r) => {
+                        let res = match op {
+                            ComparisonOp::Eq => l == r,
+                            ComparisonOp::Greater => l > r,
+                            ComparisonOp::Less => l < r,
+                            ComparisonOp::GreaterEq => l >= r,
+                            ComparisonOp::LessEq => l <= r,
+                            ComparisonOp::NotEq => l != r,
+                        };
+                        TypedExpr {
+                            kind: TypedExprKind::BoolLiteral(res),
+                            ty: Type::Boolean,
+                        }
+                    }
+                }
+            } else {
+                coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan)?;
+                TypedExpr {
+                    kind: TypedExprKind::Comparison {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                        op,
+                    },
+                    ty: Type::Boolean,
+                }
             }
         }
         BinaryOp::Boolean(op) => {
@@ -1005,6 +1067,29 @@ fn type_binary_expr(
     })
 }
 
+enum UnsizedVals {
+    Int(i128, i128),
+    Float(f64, f64),
+}
+
+fn check_unsized_consts(lhs: &TypedExpr, rhs: &TypedExpr) -> Option<UnsizedVals> {
+    match (&lhs.kind, &rhs.kind) {
+        (TypedExprKind::IntLiteral(l), TypedExprKind::IntLiteral(r)) => {
+            Some(UnsizedVals::Int(*l, *r))
+        }
+        (TypedExprKind::IntLiteral(l), TypedExprKind::FloatLiteral(r)) => {
+            Some(UnsizedVals::Float(*l as f64, *r))
+        }
+        (TypedExprKind::FloatLiteral(l), TypedExprKind::IntLiteral(r)) => {
+            Some(UnsizedVals::Float(*l, *r as f64))
+        }
+        (TypedExprKind::FloatLiteral(l), TypedExprKind::FloatLiteral(r)) => {
+            Some(UnsizedVals::Float(*l, *r))
+        }
+        _ => None,
+    }
+}
+
 fn coerce_binary_nums(
     diagnostics: &mut Vec<Diagnostic>,
     lhs: &mut TypedExpr,
@@ -1058,6 +1143,8 @@ fn coerce_binary(
         if lhs.ty == unsized_ty {
             //TODO some back propagating inference or constant propagation?
             //It's probably where I'd do bounds checking as well
+            //I have implemented constant folding using check_unsized_consts,
+            //but I'm not too happy about that, should return to it later
             lhs.ty = default_ty.clone();
             rhs.ty = default_ty;
         }
