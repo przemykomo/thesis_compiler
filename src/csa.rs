@@ -56,24 +56,6 @@ impl BlockReturnActuality {
     }
 }
 
-//TODO remove this enum, just use a type and a bool
-#[derive(Debug, Clone, PartialEq)]
-pub enum BlockReturnAbility {
-    MayReturn(Type),
-    MustReturn(Type),
-}
-
-impl BlockReturnAbility {
-    /// Determine the [`BlockReturnAbility`] of a sub-scope. `MustReturn`
-    /// become`MayReturn`.
-    #[must_use]
-    pub fn demote(self) -> Self {
-        match self {
-            Self::MayReturn(x) | Self::MustReturn(x) => Self::MayReturn(x),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum TypedStatement {
     // TODO this will probably only get checked in case of the if statement during codegen, maybe
@@ -372,7 +354,8 @@ fn type_fn(
         &mut scope,
         body,
         false,
-        BlockReturnAbility::MustReturn(decl.return_ty.clone()),
+        decl.return_ty.clone(),
+        true,
         diagnostics,
         source,
     );
@@ -401,7 +384,8 @@ fn type_block(
     scope: &mut Scope,
     block: &Vec<Statement>,
     is_loop: bool,
-    return_ability: BlockReturnAbility,
+    return_ty: Type,
+    must_return: bool,
     diagnostics: &mut Vec<Diagnostic>,
     source: &str,
 ) -> TypedBlock {
@@ -492,7 +476,8 @@ fn type_block(
                     scope,
                     body,
                     is_loop,
-                    return_ability.clone().demote(),
+                    return_ty.clone(),
+                    false,
                     diagnostics,
                     source,
                 );
@@ -503,7 +488,8 @@ fn type_block(
                         scope,
                         else_body,
                         is_loop,
-                        return_ability.clone().demote(),
+                        return_ty.clone(),
+                        false,
                         diagnostics,
                         source,
                     )
@@ -548,7 +534,8 @@ fn type_block(
                     scope,
                     body,
                     true,
-                    return_ability.clone().demote(),
+                    return_ty.clone(),
+                    false,
                     diagnostics,
                     source,
                 );
@@ -559,12 +546,10 @@ fn type_block(
             }
             Statement::Return { span, expr } => {
                 always_returns = true;
-                let (BlockReturnAbility::MayReturn(ty) | BlockReturnAbility::MustReturn(ty)) =
-                    &return_ability;
-                if expr.is_none() && *ty != Type::Void {
+                if expr.is_none() && return_ty != Type::Void {
                     diagnostics.push(Diagnostic::VoidReturn {
                         range: span.clone(),
-                        expected: ty.clone(),
+                        expected: return_ty.clone(),
                     });
                     continue;
                 }
@@ -577,11 +562,11 @@ fn type_block(
                 });
 
                 if let Some((range, Some(mut expr))) = expr {
-                    if !expr.coerce_to(ty) {
+                    if !expr.coerce_to(&return_ty) {
                         diagnostics.push(Diagnostic::CantCoerceType {
                             range,
                             from: expr.ty.clone(),
-                            to: ty.clone(),
+                            to: return_ty.clone(),
                         });
                     }
                     statements.push(TypedStatement::Return(Some(expr)));
