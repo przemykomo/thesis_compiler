@@ -15,6 +15,7 @@ pub struct TypedFn {
     pub return_ty: Type,
     pub args: Vec<FieldDecl>,
     pub body: Option<TypedBlock>,
+    pub scope: Scope,
 }
 
 #[derive(Debug)]
@@ -45,15 +46,6 @@ impl BlockReturnActuality {
             (AlwaysReturns, AlwaysReturns) => AlwaysReturns,
         }
     }
-
-    fn demote(&self) -> Self {
-        use BlockReturnActuality::*;
-        if *self != NeverReturns {
-            SometimesReturns
-        } else {
-            NeverReturns
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -65,7 +57,6 @@ pub enum TypedStatement {
     Let {
         ident: Range<usize>,
         expr: Option<TypedExpr>,
-        ty: Type,
     },
     If {
         expr: TypedExpr,
@@ -143,7 +134,7 @@ impl TypedExpr {
 #[derive(Debug)]
 pub enum TypedExprKind {
     IntLiteral(i128),
-    CharLiteral(char),
+    CharLiteral(u8),
     BoolLiteral(bool),
     FloatLiteral(f64),
     //TODO parse string literals
@@ -176,7 +167,7 @@ pub enum TypedExprKind {
     },
     //TODO Figure out if I can somehow desugar this without having lhs potentialy run code twice
     ArithmeticAssign {
-        lhs: Box<TypedExpr>,
+        lhs: Box<Place>,
         rhs: Box<TypedExpr>,
         op: ArithmeticOp,
     },
@@ -193,7 +184,7 @@ pub enum TypedExprKind {
     },
     StructLiteral {
         // ident: Range<usize>,
-        fields: Vec<(Range<usize>, TypedExpr)>,
+        fields: Vec<TypedExpr>,
     },
 
     //TODO split up to variable and function access?
@@ -202,7 +193,7 @@ pub enum TypedExprKind {
     Function(Range<usize>),
     Field {
         place: Box<Place>,
-        member: Range<usize>,
+        field: Range<usize>,
     },
 }
 
@@ -217,7 +208,7 @@ pub enum PlaceKind {
     Deref(Box<TypedExpr>),
     Variable(usize),
     Index(Box<TypedExpr>, Box<TypedExpr>),
-    Member(Box<Place>, Range<usize>),
+    Field(Box<Place>, Range<usize>),
 }
 
 #[derive(Debug)]
@@ -326,18 +317,19 @@ fn type_fn(
     diagnostics: &mut Vec<Diagnostic>,
     source: &str,
 ) -> TypedFn {
+    let mut scope = Scope {
+        vars: Vec::new(),
+        visible_vars: Vec::new(),
+    };
+
     let Some(body) = &decl.body else {
         return TypedFn {
             ident: decl.ident.clone(),
             return_ty: decl.return_ty.clone(),
             args: decl.args.clone(),
             body: None,
+            scope,
         };
-    };
-
-    let mut scope = Scope {
-        vars: Vec::new(),
-        visible_vars: Vec::new(),
     };
 
     for arg in &decl.args {
@@ -353,7 +345,6 @@ fn type_fn(
         body,
         false,
         decl.return_ty.clone(),
-        true,
         diagnostics,
         source,
     );
@@ -374,6 +365,7 @@ fn type_fn(
         return_ty: decl.return_ty.clone(),
         args: decl.args.clone(),
         body: Some(block),
+        scope,
     }
 }
 
@@ -383,7 +375,6 @@ fn type_block(
     block: &Vec<Statement>,
     is_loop: bool,
     return_ty: Type,
-    must_return: bool,
     diagnostics: &mut Vec<Diagnostic>,
     source: &str,
 ) -> TypedBlock {
@@ -416,7 +407,6 @@ fn type_block(
                     statements.push(TypedStatement::Let {
                         ident: ident.clone(),
                         expr: None,
-                        ty: ty.clone(),
                     });
                     continue;
                 };
@@ -448,11 +438,9 @@ fn type_block(
                     ty: Some(expr.ty.clone()),
                 });
 
-                let ty = expr.ty.clone();
                 statements.push(TypedStatement::Let {
                     ident: ident.clone(),
                     expr: Some(expr),
-                    ty,
                 });
             }
             Statement::If {
@@ -479,7 +467,6 @@ fn type_block(
                     body,
                     is_loop,
                     return_ty.clone(),
-                    false,
                     diagnostics,
                     source,
                 );
@@ -491,7 +478,6 @@ fn type_block(
                         else_body,
                         is_loop,
                         return_ty.clone(),
-                        false,
                         diagnostics,
                         source,
                     )
@@ -537,7 +523,6 @@ fn type_block(
                     body,
                     true,
                     return_ty.clone(),
-                    false,
                     diagnostics,
                     source,
                 );
@@ -626,10 +611,19 @@ fn type_expr(
             kind: TypedExprKind::IntLiteral(source[range.clone()].parse().unwrap()),
             ty: Type::UnsizedInt,
         },
-        ExprKind::CharLiteral(range) => TypedExpr {
-            kind: TypedExprKind::CharLiteral(source[range.clone()].chars().next().unwrap()),
-            ty: Type::Char,
-        },
+        ExprKind::CharLiteral(range) => {
+            let c = source[range.clone()].chars().next().unwrap();
+            if !c.is_ascii() {
+                diagnostics.push(Diagnostic::NonASCIIChar {
+                    range: range.clone(),
+                });
+                return None;
+            }
+            TypedExpr {
+                kind: TypedExprKind::CharLiteral(c as u8),
+                ty: Type::Char,
+            }
+        }
         ExprKind::BoolLiteral(val) => TypedExpr {
             kind: TypedExprKind::BoolLiteral(*val),
             ty: Type::Boolean,
@@ -815,7 +809,7 @@ fn type_expr(
                             to: field.ty.clone(),
                         });
                     } else {
-                        typed_fields.push((ident.clone(), expr));
+                        typed_fields.push(expr);
                     }
                 }
             }
@@ -882,7 +876,7 @@ fn type_expr(
             TypedExpr {
                 kind: TypedExprKind::Field {
                     place: Box::new(place),
-                    member: member.clone(),
+                    field: member.clone(),
                 },
                 ty: field.ty.clone(),
             }
@@ -1053,6 +1047,7 @@ fn type_binary_expr(
                 return None;
             }
 
+            let lhs = expr_to_place(lspan, lhs, diagnostics)?;
             let ty = lhs.ty.clone();
             TypedExpr {
                 kind: TypedExprKind::ArithmeticAssign {
@@ -1181,8 +1176,8 @@ fn expr_to_place(
             kind: PlaceKind::Variable(var),
             ty: expr.ty.clone(),
         },
-        TypedExprKind::Field { place, member } => Place {
-            kind: PlaceKind::Member(place, member),
+        TypedExprKind::Field { place, field } => Place {
+            kind: PlaceKind::Field(place, field),
             ty: expr.ty.clone(),
         },
         _ => {

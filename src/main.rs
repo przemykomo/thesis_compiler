@@ -1,8 +1,10 @@
-#![allow(warnings)]
+// #![allow(warnings)]
+pub mod abi;
 pub mod ast;
 pub mod csa;
 pub mod diagnostics;
 pub mod lexer;
+pub mod lower;
 pub mod parser;
 use std::fs;
 
@@ -10,7 +12,12 @@ use crate::{
     csa::perform_csa,
     diagnostics::Diagnostic::{self, *},
     lexer::Token,
+    lower::lower_to_llvm,
     parser::parse_tokens,
+};
+use llvm_sys::{
+    core::{LLVMContextDispose, LLVMDumpModule},
+    target_machine::{LLVMCodeGenFileType, LLVMTargetMachineEmitToFile},
 };
 use logos::Logos;
 
@@ -62,7 +69,27 @@ fn main() {
 
     println!("No errors detected.");
 
-    // dbg!(typed_ast);
+    let (context, machine, module) = lower_to_llvm(typed_ast, &source);
+
+    unsafe {
+        LLVMDumpModule(module);
+
+        let mut err_string = ::core::ptr::null_mut();
+        let ret = LLVMTargetMachineEmitToFile(
+            machine,
+            module,
+            c"out".as_ptr(),
+            LLVMCodeGenFileType::LLVMObjectFile,
+            &mut err_string,
+        );
+
+        if ret == 1 {
+            panic!("emit object file");
+            // panic!("{}", LLVMString::new(err_string));
+        }
+
+        LLVMContextDispose(context);
+    }
 }
 
 fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &str) {

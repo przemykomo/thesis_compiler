@@ -1,5 +1,7 @@
 use std::{collections::HashMap, ops::Range};
 
+use llvm_sys::{LLVMIntPredicate, LLVMRealPredicate};
+
 use crate::diagnostics::Diagnostic;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,10 +95,38 @@ impl Type {
         )
     }
 
+    pub fn is_signed(&self) -> bool {
+        use Type::*;
+        matches!(self, I8 | I16 | I32 | I64)
+    }
+
     pub fn is_float(&self) -> bool {
         use Type::*;
         // UnsizedInt can be promoted to a float TODO make it clearer
         matches!(self, UnsizedInt | UnsizedFloat | F32 | F64)
+    }
+
+    pub fn bits_size(&self) -> u8 {
+        use Type::*;
+        match self {
+            UnsizedInt | UnsizedFloat | Struct(_) | Void => todo!(),
+            Boolean => 1,
+            I8 | U8 | Char => 8,
+            I16 | U16 => 16,
+            I32 | U32 | F32 => 32,
+            I64
+            | U64
+            | F64
+            | Pointer(_)
+            | Fn {
+                args: _,
+                return_ty: _,
+            } => 64,
+        }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, Type::Struct(_))
     }
 }
 

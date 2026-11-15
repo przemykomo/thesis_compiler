@@ -104,4 +104,7 @@ pub enum Diagnostic {
         expected: usize,
         got: usize,
     },
+    NonASCIIChar {
+        range: Range<usize>,
+    },
 }
