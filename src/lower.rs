@@ -411,11 +411,9 @@ pub fn lower_expr(
             TypedExprKind::FloatLiteral(val) => {
                 LLVMConstReal(to_llvm_type(context, &expr.ty, source, structs), *val)
             }
-            TypedExprKind::StringLiteral(range) => LLVMBuildGlobalString(
+            TypedExprKind::StringLiteral(s) => LLVMBuildGlobalString(
                 builder,
-                CString::new(source[range.clone()].to_owned())
-                    .unwrap()
-                    .as_ptr(),
+                CString::new(s.clone()).unwrap().as_ptr(), //TODO remove clone
                 c"str".as_ptr(),
             ),
             TypedExprKind::Call { lhs, args } => {

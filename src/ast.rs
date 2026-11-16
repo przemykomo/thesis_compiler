@@ -151,7 +151,8 @@ pub enum ExprKind {
     CharLiteral(Range<usize>),
     BoolLiteral(bool),
     FloatLiteral(Range<usize>),
-    StringLiteral(Range<usize>),
+    // Owned cause it gets converted into CString anyway
+    StringLiteral(String),
     Call {
         lhs: Box<Expr>,
         args: Vec<Expr>,

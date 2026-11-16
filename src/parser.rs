@@ -218,7 +218,7 @@ fn parse_fn<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) ->
         }
         Token::LBrace => {
             tokens.next();
-            Some(parse_scope(ast, tokens)?)
+            Some(parse_scope(ast, tokens, source)?)
         }
         _ => {
             ast.diagnostics.push(Diagnostic::UnexpectedToken {
@@ -265,11 +265,15 @@ fn parse_fn_return_type(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<T
     Some(parse_type(ast, tokens)?.0)
 }
 
-fn parse_scope(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<Vec<Statement>> {
+fn parse_scope(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    source: &str,
+) -> Option<Vec<Statement>> {
     let mut statements: Vec<Statement> = Vec::new();
     while tokens.peek()?.0 != Token::RBrace {
         let mut skip_semi = false;
-        if let Some((stmt, skip)) = parse_statement(ast, tokens) {
+        if let Some((stmt, skip)) = parse_statement(ast, tokens, source) {
             statements.push(stmt);
             skip_semi = skip;
         } else {
@@ -289,7 +293,11 @@ fn parse_scope(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<Vec<Statem
     Some(statements)
 }
 
-fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Statement, bool)> {
+fn parse_statement(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    source: &str,
+) -> Option<(Statement, bool)> {
     let mut skip_semi = false;
     let token = tokens.peek()?;
     let stmt = match token.0 {
@@ -305,7 +313,7 @@ fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(State
 
             let expr = if tokens.peek()?.0 == Token::Eq {
                 tokens.next();
-                Some(parse_expr(ast, tokens, false)?)
+                Some(parse_expr(ast, tokens, false, source)?)
             } else {
                 None
             };
@@ -318,13 +326,13 @@ fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(State
         }
         Token::If => {
             tokens.next();
-            let expr = parse_expr(ast, tokens, true)?;
+            let expr = parse_expr(ast, tokens, true, source)?;
             expect(Token::LBrace, ast, tokens)?;
-            let body = parse_scope(ast, tokens)?;
+            let body = parse_scope(ast, tokens, source)?;
             let else_body = if tokens.peek()?.0 == Token::Else {
                 tokens.next();
                 expect(Token::LBrace, ast, tokens)?;
-                let else_body = parse_scope(ast, tokens)?;
+                let else_body = parse_scope(ast, tokens, source)?;
                 // expect(Token::RBrace, ast, tokens)?;
                 Some(else_body)
             } else {
@@ -340,9 +348,9 @@ fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(State
         }
         Token::While => {
             tokens.next();
-            let expr = parse_expr(ast, tokens, true)?;
+            let expr = parse_expr(ast, tokens, true, source)?;
             expect(Token::LBrace, ast, tokens)?;
-            let body = parse_scope(ast, tokens)?;
+            let body = parse_scope(ast, tokens, source)?;
 
             skip_semi = true;
             Statement::While { expr, body }
@@ -353,7 +361,7 @@ fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(State
             let expr = if tokens.peek()?.0 == Token::Semicolon {
                 None
             } else {
-                Some(parse_expr(ast, tokens, false)?)
+                Some(parse_expr(ast, tokens, false, source)?)
             };
             Statement::Return { span, expr }
         }
@@ -367,7 +375,7 @@ fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(State
             tokens.next();
             Statement::Continue(span)
         }
-        _ => Statement::Expr(parse_expr(ast, tokens, false)?),
+        _ => Statement::Expr(parse_expr(ast, tokens, false, source)?),
     };
 
     Some((stmt, skip_semi))
@@ -375,8 +383,13 @@ fn parse_statement(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(State
 
 // Struct literals cause ambiguity in cases such as `if identifier {` so they are disabled in
 // conditions
-fn parse_expr(ast: &mut ParsedFile<'_>, tokens: TokenIter, condition: bool) -> Option<Expr> {
-    parse_expr_int(ast, tokens, 0, condition)
+fn parse_expr(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    condition: bool,
+    source: &str,
+) -> Option<Expr> {
+    parse_expr_int(ast, tokens, 0, condition, source)
 }
 
 fn parse_expr_int(
@@ -384,6 +397,7 @@ fn parse_expr_int(
     tokens: TokenIter,
     min_bp: u8,
     condition: bool,
+    source: &str,
 ) -> Option<Expr> {
     let unary_op_token = tokens.peek()?;
     let unary_op = match unary_op_token.0 {
@@ -397,7 +411,7 @@ fn parse_expr_int(
     // Handle unary op binding power so that !a.b works correctly
     let mut lhs = if let Some(op) = unary_op {
         let token = tokens.next().unwrap();
-        let expr = parse_expr_int(ast, tokens, UNARY_RBP, condition)?;
+        let expr = parse_expr_int(ast, tokens, UNARY_RBP, condition, source)?;
         let span = token.1.start..expr.span.end;
         Expr {
             kind: ExprKind::Unary {
@@ -407,7 +421,7 @@ fn parse_expr_int(
             span,
         }
     } else {
-        parse_expr_atom(ast, tokens, condition)?
+        parse_expr_atom(ast, tokens, condition, source)?
     };
 
     while let Some(op) = parse_binary_op(tokens) {
@@ -419,7 +433,7 @@ fn parse_expr_int(
 
         match op {
             BinaryOp::Index => {
-                let index = parse_expr_int(ast, tokens, rbp, condition);
+                let index = parse_expr_int(ast, tokens, rbp, condition, source);
                 let Some(index) = index else {
                     skip_to(tokens, &[Token::RBracket]);
                     continue;
@@ -440,7 +454,7 @@ fn parse_expr_int(
 
                 //TODO This could be just a loop {} I think
                 while tokens.peek()?.0 != Token::RParen {
-                    if let Some(expr) = parse_expr(ast, tokens, condition) {
+                    if let Some(expr) = parse_expr(ast, tokens, condition, source) {
                         args.push(expr);
                     } else {
                         skip_to(tokens, &[Token::Comma, Token::RParen])?;
@@ -486,7 +500,7 @@ fn parse_expr_int(
                 }
             }
             _ => {
-                let rhs = parse_expr_int(ast, tokens, rbp, condition)?;
+                let rhs = parse_expr_int(ast, tokens, rbp, condition, source)?;
 
                 let span = lhs.span.start..rhs.span.end;
                 lhs = Expr {
@@ -561,7 +575,12 @@ fn parse_binary_op(tokens: TokenIter) -> Option<BinaryOp> {
     }
 }
 
-fn parse_expr_atom(ast: &mut ParsedFile<'_>, tokens: TokenIter, condition: bool) -> Option<Expr> {
+fn parse_expr_atom(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    condition: bool,
+    source: &str,
+) -> Option<Expr> {
     let literal_token = tokens.peek()?;
     let expr = match literal_token.0 {
         Token::IntLit => Some(ExprKind::IntLiteral(literal_token.1.clone())),
@@ -569,7 +588,9 @@ fn parse_expr_atom(ast: &mut ParsedFile<'_>, tokens: TokenIter, condition: bool)
         Token::True => Some(ExprKind::BoolLiteral(true)),
         Token::False => Some(ExprKind::BoolLiteral(false)),
         Token::FloatLit => Some(ExprKind::FloatLiteral(literal_token.1.clone())),
-        Token::StringLiteral => Some(ExprKind::StringLiteral(literal_token.1.clone())),
+        Token::StringLiteral => {
+            parse_string_literal(&source[literal_token.1.start + 1..literal_token.1.end - 1])
+        }
         Token::Ident => {
             let ident = literal_token.1.clone();
 
@@ -581,7 +602,7 @@ fn parse_expr_atom(ast: &mut ParsedFile<'_>, tokens: TokenIter, condition: bool)
 
                 //TODO This could be just a loop {} I think
                 while tokens.peek()?.0 != Token::RBrace {
-                    if let Some(field) = parse_field_expr(ast, tokens) {
+                    if let Some(field) = parse_field_expr(ast, tokens, source) {
                         fields.push(field);
                     } else {
                         skip_to(tokens, &[Token::Comma, Token::RBrace])?;
@@ -608,7 +629,7 @@ fn parse_expr_atom(ast: &mut ParsedFile<'_>, tokens: TokenIter, condition: bool)
         }
         Token::LParen => {
             tokens.next();
-            let expr = parse_expr(ast, tokens, false)?;
+            let expr = parse_expr(ast, tokens, false, source)?;
             expect(Token::RParen, ast, tokens)?;
             return Some(expr);
         }
@@ -631,10 +652,39 @@ fn parse_expr_atom(ast: &mut ParsedFile<'_>, tokens: TokenIter, condition: bool)
     }
 }
 
-fn parse_field_expr(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Range<usize>, Expr)> {
+fn parse_string_literal(literal: &str) -> Option<ExprKind> {
+    let mut result = String::new();
+
+    let mut iter = literal.chars();
+    while let Some(c) = iter.next() {
+        if c == '\\' {
+            let c = match iter.next()? {
+                '0' => '\0',
+                't' => '\t',
+                'n' => '\n',
+                'r' => '\r',
+                '"' => '"',
+                '\'' => '\'',
+                '\\' => '\\',
+                _ => todo!(),
+            };
+            result.push(c);
+        } else {
+            result.push(c);
+        }
+    }
+
+    Some(ExprKind::StringLiteral(result))
+}
+
+fn parse_field_expr(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    source: &str,
+) -> Option<(Range<usize>, Expr)> {
     let ident = expect(Token::Ident, ast, tokens)?;
     expect(Token::Colon, ast, tokens)?;
-    let expr = parse_expr(ast, tokens, false)?;
+    let expr = parse_expr(ast, tokens, false, source)?;
 
     Some((ident.1, expr))
 }

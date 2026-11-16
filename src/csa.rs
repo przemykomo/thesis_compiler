@@ -142,8 +142,7 @@ pub enum TypedExprKind {
     CharLiteral(u8),
     BoolLiteral(bool),
     FloatLiteral(f64),
-    //TODO parse string literals
-    StringLiteral(Range<usize>),
+    StringLiteral(String),
     Call {
         lhs: Box<TypedExpr>,
         args: Vec<TypedExpr>,
@@ -641,8 +640,8 @@ fn type_expr(
             kind: TypedExprKind::FloatLiteral(source[range.clone()].parse().unwrap()),
             ty: Type::UnsizedFloat,
         },
-        ExprKind::StringLiteral(range) => TypedExpr {
-            kind: TypedExprKind::StringLiteral(range.clone()),
+        ExprKind::StringLiteral(s) => TypedExpr {
+            kind: TypedExprKind::StringLiteral(s.clone()), //TODO remove clone
             ty: Type::Pointer(Box::new(Type::Char)),
         },
         ExprKind::Call { lhs, args } => {

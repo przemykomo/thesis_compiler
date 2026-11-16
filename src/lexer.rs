@@ -71,7 +71,8 @@ pub enum Token {
     True,
     #[token("false")]
     False,
-    #[regex(r#""(\.|[^"\\])*""#)]
+    // #[regex(r#""(\.|[^"\\])*""#)]
+    #[regex(r#""([^"\\]|\\.)*""#)]
     StringLiteral,
     // https://www.unicode.org/reports/tr31/
     #[regex(r"(\p{XID_Start}\p{XID_Continue}*)|(_\p{XID_Continue}+)", priority = 2)]
