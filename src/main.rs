@@ -6,7 +6,7 @@ pub mod diagnostics;
 pub mod lexer;
 pub mod lower;
 pub mod parser;
-use std::fs;
+use std::{ffi::CString, fs, process::Command};
 
 use crate::{
     csa::perform_csa,
@@ -16,7 +16,7 @@ use crate::{
     parser::parse_tokens,
 };
 use llvm_sys::{
-    core::{LLVMContextDispose, LLVMDumpModule},
+    core::LLVMContextDispose,
     target_machine::{LLVMCodeGenFileType, LLVMTargetMachineEmitToFile},
 };
 use logos::Logos;
@@ -25,6 +25,8 @@ fn main() {
     //TODO cli args
 
     let source_file = "test/sample.tc";
+    let object_file = "out.o";
+    let exec_file = "out";
     let source =
         fs::read_to_string(&source_file).expect("Should have been able to read the source file.");
 
@@ -72,13 +74,13 @@ fn main() {
     let (context, machine, module) = lower_to_llvm(typed_ast, &source);
 
     unsafe {
-        LLVMDumpModule(module);
+        // LLVMDumpModule(module);
 
         let mut err_string = ::core::ptr::null_mut();
         let ret = LLVMTargetMachineEmitToFile(
             machine,
             module,
-            c"out".as_ptr(),
+            CString::new(object_file).unwrap().as_ptr(),
             LLVMCodeGenFileType::LLVMObjectFile,
             &mut err_string,
         );
@@ -90,6 +92,13 @@ fn main() {
 
         LLVMContextDispose(context);
     }
+
+    Command::new("gcc")
+        .arg(object_file)
+        .arg("-o")
+        .arg(exec_file)
+        .status()
+        .expect("Couldn't link the executable.");
 }
 
 fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &str) {
