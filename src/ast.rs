@@ -1,7 +1,5 @@
 use std::{collections::HashMap, ops::Range};
 
-use llvm_sys::{LLVMIntPredicate, LLVMRealPredicate};
-
 use crate::diagnostics::Diagnostic;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +26,7 @@ pub struct FnDecl {
     pub ident: Range<usize>,
     pub return_ty: Type,
     pub args: Vec<FieldDecl>,
+    pub variadic: bool,
     pub body: Option<Vec<Statement>>,
 }
 
@@ -63,6 +62,7 @@ pub enum Type {
     //TODO Function pointers
     Fn {
         args: Vec<FieldDecl>,
+        variadic: bool,
         return_ty: Box<Type>,
     },
     Boolean,
@@ -104,25 +104,6 @@ impl Type {
         use Type::*;
         // UnsizedInt can be promoted to a float TODO make it clearer
         matches!(self, UnsizedInt | UnsizedFloat | F32 | F64)
-    }
-
-    pub fn bits_size(&self) -> u8 {
-        use Type::*;
-        match self {
-            UnsizedInt | UnsizedFloat | Struct(_) | Void => todo!(),
-            Boolean => 1,
-            I8 | U8 | Char => 8,
-            I16 | U16 => 16,
-            I32 | U32 | F32 => 32,
-            I64
-            | U64
-            | F64
-            | Pointer(_)
-            | Fn {
-                args: _,
-                return_ty: _,
-            } => 64,
-        }
     }
 
     pub fn is_scalar(&self) -> bool {

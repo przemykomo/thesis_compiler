@@ -99,6 +99,38 @@ fn parse_struct<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str
     Some(())
 }
 
+fn parse_fn_args(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Vec<FieldDecl>, bool)> {
+    let mut fields = Vec::new();
+    //TODO This could be just a loop {} I think
+    while tokens.peek()?.0 != Token::RParen {
+        if tokens.peek()?.0 == Token::Ellipsis {
+            let (_, range) = tokens.next().unwrap();
+            if tokens.peek()?.0 != Token::RParen {
+                ast.diagnostics.push(Diagnostic::EllipsisNotLast {
+                    range: range.clone(),
+                });
+                skip_to(tokens, &[Token::Comma, Token::RParen])?;
+            } else {
+                tokens.next();
+                return Some((fields, true));
+            }
+        } else if let Some(field) = parse_field_decl(ast, tokens) {
+            fields.push(field);
+        } else {
+            skip_to(tokens, &[Token::Comma, Token::RParen])?;
+        }
+
+        if tokens.peek()?.0 == Token::RParen {
+            break;
+        }
+
+        expect(Token::Comma, ast, tokens);
+    }
+    tokens.next();
+
+    Some((fields, false))
+}
+
 /// Parse comma separated `ident: type` declarations
 fn parse_field_decl_list(
     ast: &mut ParsedFile<'_>,
@@ -169,7 +201,7 @@ fn parse_type(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Type, Rang
 fn parse_fn<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) -> Option<()> {
     let ident = expect(Token::Ident, ast, tokens)?;
     expect(Token::LParen, ast, tokens)?;
-    let args = parse_field_decl_list(ast, tokens, Token::RParen)?;
+    let (args, variadic) = parse_fn_args(ast, tokens)?;
     let return_ty = match parse_fn_return_type(ast, tokens) {
         Some(r) => r,
         None => {
@@ -200,12 +232,19 @@ fn parse_fn<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) ->
         }
     };
 
+    if variadic && body.is_some() {
+        ast.diagnostics.push(Diagnostic::VariadicFnDef {
+            range: ident.1.clone(),
+        });
+    }
+
     if let Some(old) = ast.functions.insert(
         &source[ident.1.clone()],
         FnDecl {
             ident: ident.1.clone(),
             return_ty,
             args,
+            variadic,
             body,
         },
     ) {

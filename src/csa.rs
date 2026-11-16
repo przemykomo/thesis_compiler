@@ -14,6 +14,7 @@ pub struct TypedFn {
     pub ident: Range<usize>,
     pub return_ty: Type,
     pub args: Vec<FieldDecl>,
+    pub variadic: bool,
     pub body: Option<TypedBlock>,
     pub scope: Scope,
 }
@@ -50,10 +51,6 @@ impl BlockReturnActuality {
 
 #[derive(Debug)]
 pub enum TypedStatement {
-    // TODO this will probably only get checked in case of the if statement during codegen, maybe
-    // shouldn't put it here for all statements
-    // pub return_actuality: BlockReturnActuality,
-    // Making TypedStatement an enum instead of a struct with a field for the kind
     Let {
         ident: Range<usize>,
         expr: Option<TypedExpr>,
@@ -90,7 +87,7 @@ impl TypedExpr {
 
         if self.ty == UnsizedInt {
             match ty {
-                UnsizedInt => todo!(),
+                UnsizedInt => unreachable!(),
                 I8 | U8 | I16 | U16 | I32 | U32 | I64 | U64 | F32 | F64 => {
                     self.ty = ty.clone();
                     return true;
@@ -101,7 +98,7 @@ impl TypedExpr {
 
         if self.ty == UnsizedFloat {
             match ty {
-                UnsizedFloat => todo!(),
+                UnsizedFloat => unreachable!(),
                 F32 | F64 => {
                     self.ty = ty.clone();
                     return true;
@@ -128,6 +125,14 @@ impl TypedExpr {
         }
 
         false
+    }
+
+    fn coerce_default(&mut self) {
+        match self.ty {
+            Type::UnsizedInt => self.ty = Type::I32,
+            Type::UnsizedFloat => self.ty = Type::F32,
+            _ => {}
+        }
     }
 }
 
@@ -194,6 +199,10 @@ pub enum TypedExprKind {
     Field {
         place: Box<Place>,
         field: Range<usize>,
+    },
+    Index {
+        ptr: Box<TypedExpr>,
+        index: Box<TypedExpr>,
     },
 }
 
@@ -327,6 +336,7 @@ fn type_fn(
             ident: decl.ident.clone(),
             return_ty: decl.return_ty.clone(),
             args: decl.args.clone(),
+            variadic: decl.variadic,
             body: None,
             scope,
         };
@@ -364,6 +374,7 @@ fn type_fn(
         ident: decl.ident.clone(),
         return_ty: decl.return_ty.clone(),
         args: decl.args.clone(),
+        variadic: decl.variadic,
         body: Some(block),
         scope,
     }
@@ -427,10 +438,8 @@ fn type_block(
                             to: ty.clone(),
                         });
                     }
-                } else if expr.ty == Type::UnsizedInt {
-                    expr.ty = Type::I32;
-                } else if expr.ty == Type::UnsizedFloat {
-                    expr.ty = Type::F32;
+                } else {
+                    expr.coerce_default();
                 }
 
                 scope.insert(Variable {
@@ -643,6 +652,7 @@ fn type_expr(
 
             let Type::Fn {
                 args: fn_args,
+                variadic,
                 return_ty,
             } = &lhs.ty
             else {
@@ -651,8 +661,15 @@ fn type_expr(
             };
 
             let mut typed_args = Vec::new();
-            for (i, expr) in args.iter().enumerate() {
-                let arg = fn_args.get(i)?;
+            for (i, arg) in fn_args.iter().enumerate() {
+                let Some(expr) = args.get(i) else {
+                    diagnostics.push(Diagnostic::MissingArgs {
+                        range: range.clone(),
+                        expected: fn_args.len(),
+                        got: args.len(),
+                    });
+                    break;
+                };
                 let range = expr.span.clone();
                 let mut expr = type_expr(ast, scope, expr, diagnostics, source)?;
                 if !expr.coerce_to(&arg.ty) {
@@ -666,8 +683,52 @@ fn type_expr(
                 typed_args.push(expr);
             }
 
-            if fn_args.len() != args.len() {
-                diagnostics.push(Diagnostic::MissingArgs {
+            // https://en.cppreference.com/c/language/conversion#Default_argument_promotions
+            for expr in &args[fn_args.len()..] {
+                let mut expr = type_expr(ast, scope, expr, diagnostics, source)?;
+
+                match &expr.ty {
+                    Type::UnsizedInt => {
+                        expr.ty = Type::I32;
+                    }
+                    Type::Boolean | Type::Char | Type::U8 | Type::I8 | Type::I16 | Type::U16 => {
+                        expr = TypedExpr {
+                            kind: TypedExprKind::Cast {
+                                expr: Box::new(expr),
+                                ty: Type::I32,
+                            },
+                            ty: Type::I32,
+                        }
+                    }
+                    Type::I32 | Type::U32 | Type::I64 | Type::U64 => {}
+                    Type::UnsizedFloat => {
+                        expr.ty = Type::F64;
+                    }
+                    Type::F32 => {
+                        expr = TypedExpr {
+                            kind: TypedExprKind::Cast {
+                                expr: Box::new(expr),
+                                ty: Type::F64,
+                            },
+                            ty: Type::F64,
+                        }
+                    }
+                    Type::F64 => {}
+                    Type::Pointer(_) => {}
+                    Type::Fn {
+                        args: _,
+                        variadic: _,
+                        return_ty: _,
+                    } => {}
+                    Type::Void => unreachable!(),
+                    Type::Struct(_) => {}
+                }
+
+                typed_args.push(expr);
+            }
+
+            if !variadic && args.len() > fn_args.len() {
+                diagnostics.push(Diagnostic::UnexpectedArgs {
                     range,
                     expected: fn_args.len(),
                     got: args.len(),
@@ -840,6 +901,7 @@ fn type_expr(
                     kind: TypedExprKind::Function(range.clone()),
                     ty: Type::Fn {
                         args: function.args.clone(),
+                        variadic: function.variadic,
                         return_ty: Box::new(function.return_ty.clone()),
                     },
                 }
@@ -881,7 +943,38 @@ fn type_expr(
                 ty: field.ty.clone(),
             }
         }
-        ExprKind::Index { expr, index } => todo!(),
+        ExprKind::Index { expr, index } => {
+            let ptr = type_expr(ast, scope, expr, diagnostics, source);
+            let idx = type_expr(ast, scope, index, diagnostics, source);
+            let ptr = ptr?;
+            let mut idx = idx?;
+
+            let Type::Pointer(ty) = &ptr.ty else {
+                diagnostics.push(Diagnostic::IndexNonPtr {
+                    range: expr.span.clone(),
+                });
+                return None;
+            };
+
+            if !idx.coerce_to(&Type::I64) {
+                diagnostics.push(Diagnostic::CantCoerceType {
+                    range: index.span.clone(),
+                    from: idx.ty.clone(),
+                    to: Type::I64,
+                });
+                return None;
+            }
+
+            let ty = *ty.clone();
+
+            TypedExpr {
+                kind: TypedExprKind::Index {
+                    ptr: Box::new(ptr),
+                    index: Box::new(idx),
+                },
+                ty,
+            }
+        }
     })
 }
 
@@ -1178,6 +1271,10 @@ fn expr_to_place(
         },
         TypedExprKind::Field { place, field } => Place {
             kind: PlaceKind::Field(place, field),
+            ty: expr.ty.clone(),
+        },
+        TypedExprKind::Index { ptr, index } => Place {
+            kind: PlaceKind::Index(ptr, index),
             ty: expr.ty.clone(),
         },
         _ => {

@@ -29,6 +29,12 @@ pub enum Diagnostic {
         range: Range<usize>,
         old: Range<usize>,
     },
+    EllipsisNotLast {
+        range: Range<usize>,
+    },
+    VariadicFnDef {
+        range: Range<usize>,
+    },
 
     NoTypeNamed {
         range: Range<usize>,
@@ -104,7 +110,15 @@ pub enum Diagnostic {
         expected: usize,
         got: usize,
     },
+    UnexpectedArgs {
+        range: Range<usize>,
+        expected: usize,
+        got: usize,
+    },
     NonASCIIChar {
+        range: Range<usize>,
+    },
+    IndexNonPtr {
         range: Range<usize>,
     },
 }

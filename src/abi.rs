@@ -59,6 +59,7 @@ enum X64Class {
 
 fn create_abi_info(
     args: &[FieldDecl],
+    variadic: bool,
     return_ty: &Type,
     context: LLVMContextRef,
     source: &str,
@@ -210,7 +211,12 @@ fn create_abi_info(
             }
         }
 
-        let fn_type = LLVMFunctionType(retval, params.as_mut_ptr(), params.len() as u32, 0);
+        let fn_type = LLVMFunctionType(
+            retval,
+            params.as_mut_ptr(),
+            params.len() as u32,
+            variadic as i32,
+        );
 
         FnABIInfo {
             ret: ret_abi_info,
@@ -312,6 +318,7 @@ fn classify_merge(
         | Boolean
         | Fn {
             args: _,
+            variadic: _,
             return_ty: _,
         } => {
             let bits_size = match ty {
@@ -323,6 +330,7 @@ fn classify_merge(
                 | Pointer(_)
                 | Fn {
                     args: _,
+                    variadic: _,
                     return_ty: _,
                 } => 64,
                 _ => unreachable!(),
@@ -464,6 +472,7 @@ pub fn add_fn_decl(
     unsafe {
         let fn_abi_info = create_abi_info(
             &decl.args,
+            decl.variadic,
             &decl.return_ty,
             context,
             source,
@@ -731,17 +740,52 @@ pub fn call(
     data_layout: LLVMTargetDataRef,
 ) -> LLVMValueRef {
     unsafe {
-        let Type::Fn { args, return_ty } = fn_ty else {
+        let Type::Fn {
+            args,
+            variadic,
+            return_ty,
+        } = fn_ty
+        else {
             unreachable!()
         };
 
-        let fn_abi_info = create_abi_info(args, return_ty, context, source, structs, data_layout);
+        let fn_abi_info = create_abi_info(
+            args,
+            *variadic,
+            return_ty,
+            context,
+            source,
+            structs,
+            data_layout,
+        );
+
+        let used_abi_info = if *variadic {
+            let mut args = Vec::new();
+            for arg in args_exprs {
+                args.push(FieldDecl {
+                    ident: 0..0,
+                    ty: arg.ty.clone(),
+                });
+            }
+
+            &create_abi_info(
+                &args,
+                false,
+                return_ty,
+                context,
+                source,
+                structs,
+                data_layout,
+            )
+        } else {
+            &fn_abi_info
+        };
         // let func_c_str = CString::new(func.clone()).unwrap();
         // let called_fn_ref = LLVMGetNamedFunction(llvmgen.module, func_c_str.as_ptr());
 
-        let param_types_count = LLVMCountParamTypes(fn_abi_info.llvm_ty) as usize;
+        let param_types_count = LLVMCountParamTypes(used_abi_info.llvm_ty) as usize;
         let mut param_types = Vec::with_capacity(param_types_count);
-        LLVMGetParamTypes(fn_abi_info.llvm_ty, param_types.as_mut_ptr());
+        LLVMGetParamTypes(used_abi_info.llvm_ty, param_types.as_mut_ptr());
         param_types.set_len(param_types_count);
 
         let mut args_ptr: Vec<LLVMValueRef> = Vec::new();
@@ -751,7 +795,7 @@ pub fn call(
             if let Piece {
                 class: X64Class::CLASS_MEMORY,
                 ..
-            } = fn_abi_info.ret.pieces[0]
+            } = used_abi_info.ret.pieces[0]
             {
                 let dst = entry_alloca(
                     context,
@@ -766,7 +810,7 @@ pub fn call(
             }
         };
 
-        for ((abi, arg), expr) in fn_abi_info.args.iter().zip(args).zip(args_exprs) {
+        for (abi, expr) in used_abi_info.args.iter().zip(args_exprs) {
             let val = lower::lower_expr(
                 expr,
                 context,
@@ -776,9 +820,9 @@ pub fn call(
                 caller_fn_ref,
                 source,
                 structs,
-                data_layout
+                data_layout,
             );
-            if arg.ty.is_scalar() {
+            if expr.ty.is_scalar() {
                 args_ptr.push(val);
                 continue;
             }
@@ -790,7 +834,7 @@ pub fn call(
                         let alloca = entry_alloca(
                             context,
                             caller_fn_ref,
-                            lower::to_llvm_type(context, &arg.ty, source, structs),
+                            lower::to_llvm_type(context, &expr.ty, source, structs),
                             c"arg".as_ptr(),
                         );
                         LLVMBuildStore(builder, val, alloca);
@@ -813,7 +857,7 @@ pub fn call(
                 let alloca = entry_alloca(
                     context,
                     caller_fn_ref,
-                    lower::to_llvm_type(context, &arg.ty, source, structs),
+                    lower::to_llvm_type(context, &expr.ty, source, structs),
                     c"arg".as_ptr(),
                 );
                 LLVMBuildStore(builder, val, alloca);

@@ -139,6 +139,8 @@ pub enum Token {
     Arrow,
     #[token(".")]
     Period,
+    #[token("...")]
+    Ellipsis,
 }
 
 impl Display for Token {
@@ -206,6 +208,7 @@ impl Display for Token {
             Token::Colon => ":",
             Token::Arrow => "->",
             Token::Period => ".",
+            Token::Ellipsis => "...",
         };
 
         write!(f, "{s}")

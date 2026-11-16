@@ -5,7 +5,7 @@ use std::ptr;
 use llvm_sys::LLVMIntPredicate;
 use llvm_sys::LLVMRealPredicate;
 use llvm_sys::analysis::LLVMVerifierFailureAction;
-use llvm_sys::analysis::LLVMVerifyFunction;
+use llvm_sys::analysis::LLVMVerifyModule;
 use llvm_sys::prelude::*;
 use llvm_sys::target_machine::*;
 use llvm_sys::{core::*, target::*};
@@ -38,8 +38,8 @@ pub fn lower_to_llvm(
         LLVMInitializeX86Target();
         LLVMInitializeX86TargetInfo();
         LLVMInitializeX86AsmPrinter();
-        LLVMInitializeX86AsmParser();
-        LLVMInitializeX86Disassembler();
+        // LLVMInitializeX86AsmParser();
+        // LLVMInitializeX86Disassembler();
         LLVMInitializeX86TargetMC();
 
         let mut target = ptr::null_mut();
@@ -54,6 +54,7 @@ pub fn lower_to_llvm(
         let opt = LLVMCreateTargetMachineOptions();
         LLVMTargetMachineOptionsSetCPU(opt, c"x86-64".as_ptr());
         LLVMTargetMachineOptionsSetABI(opt, c"sysv".as_ptr());
+        LLVMTargetMachineOptionsSetRelocMode(opt, LLVMRelocMode::LLVMRelocPIC);
         LLVMTargetMachineOptionsSetCodeGenOptLevel(opt, LLVMCodeGenOptLevel::LLVMCodeGenLevelNone);
 
         let machine = LLVMCreateTargetMachineWithOptions(target, triple, opt);
@@ -63,6 +64,8 @@ pub fn lower_to_llvm(
 
         LLVMSetTarget(module, triple);
         let mut label = 0;
+
+        let mut declarations = Vec::new();
 
         for typed_fn in typed_ast.functions.values() {
             let (fn_ref, abi_info) = add_fn_decl(
@@ -74,6 +77,11 @@ pub fn lower_to_llvm(
                 typed_fn,
             );
 
+            declarations.push((fn_ref, abi_info, typed_fn.ident.clone()));
+        }
+
+        for (fn_ref, abi_info, ident) in declarations {
+            let typed_fn = typed_ast.functions.get(&source[ident]).unwrap();
             if let Some(body) = &typed_fn.body {
                 let mut vars: Vec<Variable> = Vec::new();
 
@@ -107,14 +115,24 @@ pub fn lower_to_llvm(
                         data_layout,
                     );
                 }
-
-                if LLVMVerifyFunction(fn_ref, LLVMVerifierFailureAction::LLVMPrintMessageAction)
-                    == 1
-                {
-                    LLVMDeleteFunction(fn_ref);
-                    panic!("Couldn't verify a function");
-                }
+                // if LLVMVerifyFunction(fn_ref, LLVMVerifierFailureAction::LLVMPrintMessageAction)
+                //     == 1
+                // {
+                //     LLVMDumpModule(module);
+                //     LLVMDeleteFunction(fn_ref);
+                //     panic!("Couldn't verify a function");
+                // }
             }
+        }
+
+        if LLVMVerifyModule(
+            module,
+            LLVMVerifierFailureAction::LLVMPrintMessageAction,
+            std::ptr::null_mut(),
+        ) == 1
+        {
+            LLVMDumpModule(module);
+            panic!("Coudln't verify the module");
         }
         (context, machine, module)
     }
@@ -798,6 +816,24 @@ pub fn lower_expr(
                         .as_ptr(),
                 )
             }
+            TypedExprKind::Index { ptr, index } => {
+                let llvm_ty = to_llvm_type(context, &expr.ty, source, structs);
+                let ptr = lower_array_index(
+                    llvm_ty,
+                    context,
+                    module,
+                    builder,
+                    vars,
+                    fn_ref,
+                    source,
+                    structs,
+                    data_layout,
+                    ptr,
+                    index,
+                );
+
+                LLVMBuildLoad2(builder, llvm_ty, ptr, c"".as_ptr())
+            }
         }
     }
 }
@@ -867,40 +903,19 @@ fn lower_place(
             data_layout,
         ),
         PlaceKind::Variable(v) => vars[*v].ptr,
-        PlaceKind::Index(lhs, idx) => unsafe {
-            let ptr = lower_expr(
-                lhs,
-                context,
-                module,
-                builder,
-                vars,
-                fn_ref,
-                source,
-                structs,
-                data_layout,
-            );
-            let idx = lower_expr(
-                idx,
-                context,
-                module,
-                builder,
-                vars,
-                fn_ref,
-                source,
-                structs,
-                data_layout,
-            );
-            let mut indices = [idx];
-
-            LLVMBuildGEP2(
-                builder,
-                to_llvm_type(context, &place.ty, source, structs),
-                ptr,
-                indices.as_mut_ptr(),
-                1,
-                c"".as_ptr(),
-            )
-        },
+        PlaceKind::Index(lhs, idx) => lower_array_index(
+            to_llvm_type(context, &place.ty, source, structs),
+            context,
+            module,
+            builder,
+            vars,
+            fn_ref,
+            source,
+            structs,
+            data_layout,
+            lhs,
+            idx,
+        ),
         PlaceKind::Field(place, range) => lower_field_access(
             place,
             context,
@@ -914,6 +929,46 @@ fn lower_place(
             data_layout,
         ),
     }
+}
+
+fn lower_array_index(
+    llvm_ty: LLVMTypeRef,
+    context: LLVMContextRef,
+    module: LLVMModuleRef,
+    builder: LLVMBuilderRef,
+    vars: &mut Vec<Variable>,
+    fn_ref: LLVMValueRef,
+    source: &str,
+    structs: &HashMap<&str, StructDecl>,
+    data_layout: LLVMTargetDataRef,
+    lhs: &Box<TypedExpr>,
+    idx: &Box<TypedExpr>,
+) -> *mut llvm_sys::LLVMValue {
+    let ptr = lower_expr(
+        lhs,
+        context,
+        module,
+        builder,
+        vars,
+        fn_ref,
+        source,
+        structs,
+        data_layout,
+    );
+    let idx = lower_expr(
+        idx,
+        context,
+        module,
+        builder,
+        vars,
+        fn_ref,
+        source,
+        structs,
+        data_layout,
+    );
+    let mut indices = [idx];
+
+    unsafe { LLVMBuildGEP2(builder, llvm_ty, ptr, indices.as_mut_ptr(), 1, c"".as_ptr()) }
 }
 
 fn lower_field_access(
@@ -981,6 +1036,7 @@ pub fn to_llvm_type(
             Pointer(_)
             | Fn {
                 args: _,
+                variadic: _,
                 return_ty: _,
             } => LLVMPointerTypeInContext(context, 0),
             Boolean => LLVMInt1TypeInContext(context),
