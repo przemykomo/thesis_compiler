@@ -201,7 +201,80 @@ mod tests {
                 struct Large process(struct Small s, int32_t a) {
                   return (struct Large){.a = s.a, .b = 3.14, .c = s.b, .d = a};
                 }
-                    "#
+                "#
+                .as_bytes(),
+            )
+            .unwrap();
+        gcc.wait().unwrap();
+
+        Command::new("gcc")
+            .args(["out.o", "/tmp/c.o", "-o", "out"])
+            .status()
+            .expect("Couldn't link the executable.");
+
+        let status = Command::new("./out").output().unwrap();
+        assert_eq!(str::from_utf8(&status.stdout).unwrap(), "1, 3.14, 2, 3",);
+    }
+
+    #[test]
+    fn interop2() {
+        compile(
+            "out.o",
+            r#"
+            struct Small {
+                a: i32,
+                b: i32
+            }
+
+            struct Large {
+                a: i32,
+                b: f32,
+                c: i64,
+                d: i64
+            }
+            fn process(s: Small, a: i32) -> Large {
+                return Large {
+                    a: s.a,
+                    b: 3.14,
+                    c: s.b as i64,
+                    d: a as i64
+                };
+            }
+        "#,
+        )
+        .unwrap();
+
+        let mut gcc = Command::new("gcc")
+            .args(["-o", "/tmp/c.o", "-xc", "-c", "-"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        gcc.stdin
+            .take()
+            .unwrap()
+            .write_all(
+                r#"
+                #include <stdint.h>
+                #include <stdio.h>
+                struct Small {
+                  int32_t a;
+                  int32_t b;
+                };
+
+                struct Large {
+                  int32_t a;
+                  float b;
+                  int64_t c;
+                  int64_t d;
+                };
+
+                struct Large process(struct Small s, int32_t a);
+                int main() {
+                    struct Large l = process((struct Small) {.a = 1, .b = 2}, 3);
+                    printf("%d, %.2f, %d, %d", l.a, l.b, l.c, l.d);
+                    return 0;
+                }
+                "#
                 .as_bytes(),
             )
             .unwrap();
