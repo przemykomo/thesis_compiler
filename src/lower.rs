@@ -814,9 +814,9 @@ pub fn lower_expr(
                         .as_ptr(),
                 )
             }
-            TypedExprKind::Index { ptr, index } => {
+            TypedExprKind::IndexPtr { ptr, index } => {
                 let llvm_ty = to_llvm_type(context, &expr.ty, source, structs);
-                let ptr = lower_array_index(
+                let ptr = lower_ptr_index(
                     llvm_ty,
                     context,
                     module,
@@ -829,7 +829,23 @@ pub fn lower_expr(
                     ptr,
                     index,
                 );
-
+                LLVMBuildLoad2(builder, llvm_ty, ptr, c"".as_ptr())
+            }
+            TypedExprKind::IndexArr { place, index } => {
+                let llvm_ty = to_llvm_type(context, &expr.ty, source, structs);
+                let ptr = lower_array_index(
+                    llvm_ty,
+                    context,
+                    module,
+                    builder,
+                    vars,
+                    fn_ref,
+                    source,
+                    structs,
+                    data_layout,
+                    place,
+                    index,
+                );
                 LLVMBuildLoad2(builder, llvm_ty, ptr, c"".as_ptr())
             }
         }
@@ -901,7 +917,7 @@ fn lower_place(
             data_layout,
         ),
         PlaceKind::Variable(v) => vars[*v].ptr,
-        PlaceKind::Index(lhs, idx) => lower_array_index(
+        PlaceKind::IndexPtr(lhs, idx) => lower_ptr_index(
             to_llvm_type(context, &place.ty, source, structs),
             context,
             module,
@@ -912,6 +928,19 @@ fn lower_place(
             structs,
             data_layout,
             lhs,
+            idx,
+        ),
+        PlaceKind::IndexArr(arr, idx) => lower_array_index(
+            to_llvm_type(context, &place.ty, source, structs),
+            context,
+            module,
+            builder,
+            vars,
+            fn_ref,
+            source,
+            structs,
+            data_layout,
+            arr,
             idx,
         ),
         PlaceKind::Field(place, range) => lower_field_access(
@@ -929,7 +958,7 @@ fn lower_place(
     }
 }
 
-fn lower_array_index(
+fn lower_ptr_index(
     llvm_ty: LLVMTypeRef,
     context: LLVMContextRef,
     module: LLVMModuleRef,
@@ -939,8 +968,8 @@ fn lower_array_index(
     source: &str,
     structs: &HashMap<&str, StructDecl>,
     data_layout: LLVMTargetDataRef,
-    lhs: &Box<TypedExpr>,
-    idx: &Box<TypedExpr>,
+    lhs: &TypedExpr,
+    idx: &TypedExpr,
 ) -> *mut llvm_sys::LLVMValue {
     let ptr = lower_expr(
         lhs,
@@ -955,6 +984,46 @@ fn lower_array_index(
     );
     let idx = lower_expr(
         idx,
+        context,
+        module,
+        builder,
+        vars,
+        fn_ref,
+        source,
+        structs,
+        data_layout,
+    );
+    let mut indices = [idx];
+
+    unsafe { LLVMBuildGEP2(builder, llvm_ty, ptr, indices.as_mut_ptr(), 1, c"".as_ptr()) }
+}
+
+fn lower_array_index(
+    llvm_ty: LLVMTypeRef,
+    context: LLVMContextRef,
+    module: LLVMModuleRef,
+    builder: LLVMBuilderRef,
+    vars: &mut Vec<Variable>,
+    fn_ref: LLVMValueRef,
+    source: &str,
+    structs: &HashMap<&str, StructDecl>,
+    data_layout: LLVMTargetDataRef,
+    place: &Place,
+    index: &TypedExpr,
+) -> *mut llvm_sys::LLVMValue {
+    let ptr = lower_place(
+        place,
+        context,
+        module,
+        builder,
+        vars,
+        fn_ref,
+        source,
+        structs,
+        data_layout,
+    );
+    let idx = lower_expr(
+        index,
         context,
         module,
         builder,
@@ -1049,6 +1118,9 @@ pub fn to_llvm_type(
                     .collect();
 
                 LLVMStructTypeInContext(context, fields.as_mut_ptr(), fields.len() as u32, 0)
+            }
+            Array(ty, len) => {
+                LLVMArrayType2(to_llvm_type(context, ty, source, structs), *len as u64)
             }
         }
     }

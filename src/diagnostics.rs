@@ -38,6 +38,9 @@ pub enum Diagnostic {
     VariadicFnDef {
         range: Range<usize>,
     },
+    InvalidArrayLen {
+        range: Range<usize>,
+    },
 
     NoTypeNamed {
         range: Range<usize>,
@@ -121,7 +124,7 @@ pub enum Diagnostic {
     NonASCIIChar {
         range: Range<usize>,
     },
-    IndexNonPtr {
+    IndexNonPtrArr {
         range: Range<usize>,
     },
 }
@@ -198,6 +201,14 @@ pub fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &s
             VariadicFnDef { range } => {
                 d(
                     "Only external declarations are supported for variadic functions",
+                    range,
+                    lines,
+                    source,
+                );
+            }
+            InvalidArrayLen { range } => {
+                d(
+                    "Array length must be an unsigned integer",
                     range,
                     lines,
                     source,
@@ -305,8 +316,13 @@ pub fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &s
             NonASCIIChar { range } => {
                 d("Not an ascii character", range, lines, source);
             }
-            IndexNonPtr { range } => {
-                d("Trying to index a non-pointer", range, lines, source);
+            IndexNonPtrArr { range } => {
+                d(
+                    "Only a pointer or an array can be indexed",
+                    range,
+                    lines,
+                    source,
+                );
             }
         }
     }
@@ -332,12 +348,28 @@ pub fn print_type(ty: &Type, source: &str) {
             print_type(ty, source);
         }
         Type::Fn {
-            args: _,
-            variadic: _,
-            return_ty: _,
-        } => todo!(),
+            args,
+            variadic,
+            return_ty,
+        } => {
+            print!("fn(");
+            for arg in args {
+                print_type(&arg.ty, source);
+                print!(",");
+            }
+            if *variadic {
+                print!("...");
+            }
+            print!(") -> ");
+            print_type(return_ty, source);
+        }
         Type::Boolean => print!("bool"),
         Type::Void => print!("void"),
         Type::Struct(range) => print!("{}", &source[range.clone()]),
+        Type::Array(ty, len) => {
+            print!("[");
+            print_type(ty, source);
+            print!("; {len}]");
+        }
     }
 }

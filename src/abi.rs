@@ -427,6 +427,7 @@ fn classify_merge(
 
             words
         },
+        Array(_, _) => todo!(),
     }
 }
 

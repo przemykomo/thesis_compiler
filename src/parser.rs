@@ -82,7 +82,7 @@ fn expect(
 fn parse_struct<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) -> Option<()> {
     let ident = expect(Token::Ident, ast, tokens)?;
     expect(Token::LBrace, ast, tokens)?;
-    let fields = parse_field_decl_list(ast, tokens, Token::RBrace)?;
+    let fields = parse_field_decl_list(ast, tokens, Token::RBrace, source)?;
 
     if let Some(old) = ast.structs.insert(
         &source[ident.1.clone()],
@@ -99,7 +99,11 @@ fn parse_struct<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str
     Some(())
 }
 
-fn parse_fn_args(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Vec<FieldDecl>, bool)> {
+fn parse_fn_args(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    source: &str,
+) -> Option<(Vec<FieldDecl>, bool)> {
     let mut fields = Vec::new();
     //TODO This could be just a loop {} I think
     while tokens.peek()?.0 != Token::RParen {
@@ -114,7 +118,7 @@ fn parse_fn_args(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Vec<Fie
                 tokens.next();
                 return Some((fields, true));
             }
-        } else if let Some(field) = parse_field_decl(ast, tokens) {
+        } else if let Some(field) = parse_field_decl(ast, tokens, source) {
             fields.push(field);
         } else {
             skip_to(tokens, &[Token::Comma, Token::RParen])?;
@@ -136,11 +140,12 @@ fn parse_field_decl_list(
     ast: &mut ParsedFile<'_>,
     tokens: TokenIter,
     end: Token,
+    source: &str,
 ) -> Option<Vec<FieldDecl>> {
     let mut fields = Vec::new();
     //TODO This could be just a loop {} I think
     while tokens.peek()?.0 != end {
-        if let Some(field) = parse_field_decl(ast, tokens) {
+        if let Some(field) = parse_field_decl(ast, tokens, source) {
             fields.push(field);
         } else {
             skip_to(tokens, &[Token::Comma, end])?;
@@ -157,15 +162,23 @@ fn parse_field_decl_list(
     Some(fields)
 }
 
-fn parse_field_decl(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<FieldDecl> {
+fn parse_field_decl(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    source: &str,
+) -> Option<FieldDecl> {
     let ident = expect(Token::Ident, ast, tokens)?;
     expect(Token::Colon, ast, tokens)?;
-    let ty = parse_type(ast, tokens)?.0;
+    let ty = parse_type(ast, tokens, source)?.0;
 
     Some(FieldDecl { ident: ident.1, ty })
 }
 
-fn parse_type(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Type, Range<usize>)> {
+fn parse_type(
+    ast: &mut ParsedFile<'_>,
+    tokens: TokenIter,
+    source: &str,
+) -> Option<(Type, Range<usize>)> {
     let token = tokens.next()?;
     let ty = match token.0 {
         Token::Ident => Type::Struct(token.1.clone()),
@@ -183,8 +196,22 @@ fn parse_type(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Type, Rang
         Token::Bool => Type::Boolean,
         Token::Char => Type::Char,
         Token::Asterisk => {
-            let ty = parse_type(ast, tokens)?;
+            let ty = parse_type(ast, tokens, source)?;
             return Some((Type::Pointer(Box::new(ty.0)), token.1.start..ty.1.end));
+        }
+        Token::LBracket => {
+            let ty = parse_type(ast, tokens, source)?;
+            expect(Token::Semicolon, ast, tokens)?;
+            let len_token = expect(Token::IntLit, ast, tokens)?;
+            let Ok(len): &Result<usize, _> = &source[len_token.1.clone()].parse() else {
+                ast.diagnostics.push(Diagnostic::InvalidArrayLen {
+                    range: len_token.1.clone(),
+                });
+                return None;
+            };
+
+            let end = expect(Token::RBracket, ast, tokens)?;
+            return Some((Type::Array(Box::new(ty.0), *len), token.1.start..end.1.end));
         }
         _ => {
             ast.diagnostics.push(Diagnostic::ExpectedType {
@@ -201,8 +228,8 @@ fn parse_type(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<(Type, Rang
 fn parse_fn<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) -> Option<()> {
     let ident = expect(Token::Ident, ast, tokens)?;
     expect(Token::LParen, ast, tokens)?;
-    let (args, variadic) = parse_fn_args(ast, tokens)?;
-    let return_ty = match parse_fn_return_type(ast, tokens) {
+    let (args, variadic) = parse_fn_args(ast, tokens, source)?;
+    let return_ty = match parse_fn_return_type(ast, tokens, source) {
         Some(r) => r,
         None => {
             skip_to(tokens, &FN_BODY_FIRST)?;
@@ -256,13 +283,13 @@ fn parse_fn<'a>(ast: &mut ParsedFile<'a>, tokens: TokenIter, source: &'a str) ->
     Some(())
 }
 
-fn parse_fn_return_type(ast: &mut ParsedFile<'_>, tokens: TokenIter) -> Option<Type> {
+fn parse_fn_return_type(ast: &mut ParsedFile<'_>, tokens: TokenIter, source: &str) -> Option<Type> {
     if tokens.peek()?.0 != Token::Arrow {
         return Some(Type::Void);
     }
 
     tokens.next();
-    Some(parse_type(ast, tokens)?.0)
+    Some(parse_type(ast, tokens, source)?.0)
 }
 
 fn parse_scope(
@@ -306,7 +333,7 @@ fn parse_statement(
             let ident = expect(Token::Ident, ast, tokens)?;
             let ty = if tokens.peek()?.0 == Token::Colon {
                 tokens.next();
-                Some(parse_type(ast, tokens)?.0)
+                Some(parse_type(ast, tokens, source)?.0)
             } else {
                 None
             };
@@ -489,7 +516,7 @@ fn parse_expr_int(
                 }
             }
             BinaryOp::Cast => {
-                let ty = parse_type(ast, tokens)?;
+                let ty = parse_type(ast, tokens, source)?;
                 let span = lhs.span.start..ty.1.end;
                 lhs = Expr {
                     kind: ExprKind::Cast {

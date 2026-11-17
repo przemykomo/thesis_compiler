@@ -199,8 +199,12 @@ pub enum TypedExprKind {
         place: Box<Place>,
         field: Range<usize>,
     },
-    Index {
+    IndexPtr {
         ptr: Box<TypedExpr>,
+        index: Box<TypedExpr>,
+    },
+    IndexArr {
+        place: Box<Place>,
         index: Box<TypedExpr>,
     },
 }
@@ -215,7 +219,8 @@ pub struct Place {
 pub enum PlaceKind {
     Deref(Box<TypedExpr>),
     Variable(usize),
-    Index(Box<TypedExpr>, Box<TypedExpr>),
+    IndexPtr(Box<TypedExpr>, Box<TypedExpr>),
+    IndexArr(Box<Place>, Box<TypedExpr>),
     Field(Box<Place>, Range<usize>),
 }
 
@@ -728,6 +733,7 @@ fn type_expr(
                             } => {}
                             Type::Void => unreachable!(),
                             Type::Struct(_) => {}
+                            Type::Array(_, _) => {}
                         }
 
                         typed_args.push(expr);
@@ -955,8 +961,8 @@ fn type_expr(
             let ptr = ptr?;
             let mut idx = idx?;
 
-            let Type::Pointer(ty) = &ptr.ty else {
-                diagnostics.push(Diagnostic::IndexNonPtr {
+            let (Type::Pointer(ty) | Type::Array(ty, _)) = &ptr.ty else {
+                diagnostics.push(Diagnostic::IndexNonPtrArr {
                     range: expr.span.clone(),
                 });
                 return None;
@@ -973,12 +979,22 @@ fn type_expr(
 
             let ty = *ty.clone();
 
-            TypedExpr {
-                kind: TypedExprKind::Index {
-                    ptr: Box::new(ptr),
-                    index: Box::new(idx),
-                },
-                ty,
+            if let Type::Pointer(_) = &ptr.ty {
+                TypedExpr {
+                    kind: TypedExprKind::IndexPtr {
+                        ptr: Box::new(ptr),
+                        index: Box::new(idx),
+                    },
+                    ty,
+                }
+            } else {
+                TypedExpr {
+                    kind: TypedExprKind::IndexArr {
+                        place: Box::new(expr_to_place(expr.span.clone(), ptr, diagnostics)?),
+                        index: Box::new(idx),
+                    },
+                    ty,
+                }
             }
         }
     })
@@ -1283,8 +1299,12 @@ fn expr_to_place(
             kind: PlaceKind::Field(place, field),
             ty: expr.ty.clone(),
         },
-        TypedExprKind::Index { ptr, index } => Place {
-            kind: PlaceKind::Index(ptr, index),
+        TypedExprKind::IndexPtr { ptr, index } => Place {
+            kind: PlaceKind::IndexPtr(ptr, index),
+            ty: expr.ty.clone(),
+        },
+        TypedExprKind::IndexArr { place, index } => Place {
+            kind: PlaceKind::IndexArr(place, index),
             ty: expr.ty.clone(),
         },
         _ => {

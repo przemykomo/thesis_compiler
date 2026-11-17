@@ -63,6 +63,7 @@ pub enum Type {
     Boolean,
     Void,
     Struct(Range<usize>),
+    Array(Box<Type>, usize),
 }
 
 impl Type {
