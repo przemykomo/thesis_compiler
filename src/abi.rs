@@ -28,7 +28,7 @@ struct Registers {
 #[derive(Debug)]
 struct ABIArgInfo {
     pieces: [Piece; 2],
-    single: bool,
+    single_piece: bool,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -102,7 +102,7 @@ fn create_abi_info(
         let retval = if return_ty.is_scalar() {
             lower::to_llvm_type(context, return_ty, source, structs)
         } else {
-            if ret_abi_info.single {
+            if ret_abi_info.single_piece {
                 let piece = ret_abi_info.pieces[0];
                 match piece.class {
                     X64Class::CLASS_NO_CLASS => LLVMVoidTypeInContext(context),
@@ -161,7 +161,7 @@ fn create_abi_info(
                 params.push(lower::to_llvm_type(context, &arg.ty, source, structs));
                 continue;
             }
-            if abi.single {
+            if abi.single_piece {
                 let piece = abi.pieces[0];
                 match piece.class {
                     X64Class::CLASS_NO_CLASS => {}
@@ -260,7 +260,7 @@ fn classify_parameter(
         || available_registers.ssa_registers < needed_regs.ssa_registers
     {
         ret.pieces[0].class = X64Class::CLASS_MEMORY;
-        ret.single = true;
+        ret.single_piece = true;
         return ret;
     }
 
@@ -285,7 +285,7 @@ fn classify(
 
     ABIArgInfo {
         pieces,
-        single: num < 2,
+        single_piece: num < 2,
     }
 }
 
@@ -549,7 +549,7 @@ pub fn add_fn_prologue(
             //Reconstruct the aggregate from ABI complaint IR args
             //There might be problems if the struct isn't aligned, but I think it always
             //is in my case
-            if abi.single {
+            if abi.single_piece {
                 match abi.pieces[0].class {
                     X64Class::CLASS_NO_CLASS => {}
                     X64Class::CLASS_MEMORY => unreachable!(),
@@ -827,7 +827,7 @@ pub fn call(
                 continue;
             }
 
-            if abi.single {
+            if abi.single_piece {
                 match abi.pieces[0].class {
                     X64Class::CLASS_NO_CLASS => {}
                     X64Class::CLASS_MEMORY => {
@@ -841,13 +841,30 @@ pub fn call(
                         args_ptr.push(alloca);
                     }
                     X64Class::CLASS_INTEGER => {
-                        let ext = LLVMBuildZExtOrBitCast(
-                            builder,
-                            val,
-                            LLVMInt64TypeInContext(context),
-                            c"ext".as_ptr(),
+                        // Since the argument isn't a scalar, I probably always have to reinterpret
+                        // it as such by using store & load
+                        // let ext = LLVMBuildZExtOrBitCast(
+                        //     builder,
+                        //     val,
+                        //     LLVMInt64TypeInContext(context),
+                        //     c"extA".as_ptr(),
+                        // );
+                        // args_ptr.push(ext);
+
+                        let alloca = entry_alloca(
+                            context,
+                            caller_fn_ref,
+                            lower::to_llvm_type(context, &expr.ty, source, structs),
+                            c"arg".as_ptr(),
                         );
-                        args_ptr.push(ext);
+                        LLVMBuildStore(builder, val, alloca);
+                        let val = LLVMBuildLoad2(
+                            builder,
+                            LLVMInt64TypeInContext(context),
+                            alloca,
+                            c"arg_i64".as_ptr(),
+                        );
+                        args_ptr.push(val);
                     }
                     X64Class::CLASS_SSE => {
                         args_ptr.push(val);
@@ -891,7 +908,7 @@ pub fn call(
                                 builder,
                                 val,
                                 LLVMInt64TypeInContext(context),
-                                c"ext".as_ptr(),
+                                c"extB".as_ptr(),
                             );
                             args_ptr.push(ext);
                         }

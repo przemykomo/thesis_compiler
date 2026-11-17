@@ -79,13 +79,13 @@ pub struct TypedExpr {
 }
 
 impl TypedExpr {
-    fn coerce_to(&mut self, ty: &Type) -> bool {
+    fn coerce_to(&mut self, ty: &Type, source: &str) -> bool {
         use Type::*;
-        if self.ty == *ty {
+        if self.ty.eq(ty, source) {
             return true;
         }
 
-        if self.ty == UnsizedInt {
+        if let UnsizedInt = self.ty {
             match ty {
                 UnsizedInt => unreachable!(),
                 I8 | U8 | I16 | U16 | I32 | U32 | I64 | U64 | F32 | F64 => {
@@ -96,7 +96,7 @@ impl TypedExpr {
             }
         }
 
-        if self.ty == UnsizedFloat {
+        if let UnsizedFloat = self.ty {
             match ty {
                 UnsizedFloat => unreachable!(),
                 F32 | F64 => {
@@ -359,7 +359,7 @@ fn type_fn(
     );
 
     if block.return_actuality != BlockReturnActuality::AlwaysReturns {
-        if decl.return_ty == Type::Void {
+        if let Type::Void = decl.return_ty {
             block.statements.push(TypedStatement::Return(None));
             block.return_actuality = BlockReturnActuality::AlwaysReturns;
         } else {
@@ -430,7 +430,7 @@ fn type_block(
                 };
 
                 if let Some(ty) = ty {
-                    if !expr.coerce_to(ty) {
+                    if !expr.coerce_to(ty, source) {
                         diagnostics.push(Diagnostic::CantCoerceType {
                             range: ident.clone(),
                             from: expr.ty.clone(),
@@ -460,7 +460,7 @@ fn type_block(
                 let mut expr = type_expr(ast, scope, expr, diagnostics, source);
 
                 if let Some(ref mut expr) = expr
-                    && expr.ty != Type::Boolean
+                    && !matches!(expr.ty, Type::Boolean)
                 {
                     diagnostics.push(Diagnostic::CantCoerceType {
                         range: expr_span,
@@ -516,7 +516,7 @@ fn type_block(
                 let mut expr = type_expr(ast, scope, expr, diagnostics, source);
 
                 if let Some(ref mut expr) = expr
-                    && expr.ty != Type::Boolean
+                    && !matches!(expr.ty, Type::Boolean)
                 {
                     diagnostics.push(Diagnostic::CantCoerceType {
                         range: expr_span,
@@ -541,7 +541,7 @@ fn type_block(
             }
             Statement::Return { span, expr } => {
                 always_returns = true;
-                if expr.is_none() && return_ty != Type::Void {
+                if expr.is_none() && !matches!(return_ty, Type::Void) {
                     diagnostics.push(Diagnostic::VoidReturn {
                         range: span.clone(),
                         expected: return_ty.clone(),
@@ -557,7 +557,7 @@ fn type_block(
                 });
 
                 if let Some((range, Some(mut expr))) = expr {
-                    if !expr.coerce_to(&return_ty) {
+                    if !expr.coerce_to(&return_ty, source) {
                         diagnostics.push(Diagnostic::CantCoerceType {
                             range,
                             from: expr.ty.clone(),
@@ -671,7 +671,7 @@ fn type_expr(
                 };
                 let range = expr.span.clone();
                 let mut expr = type_expr(ast, scope, expr, diagnostics, source)?;
-                if !expr.coerce_to(&arg.ty) {
+                if !expr.coerce_to(&arg.ty, source) {
                     diagnostics.push(Diagnostic::CantCoerceType {
                         range,
                         from: expr.ty,
@@ -766,7 +766,7 @@ fn type_expr(
                     }
                 }
                 UnaryOp::Not => {
-                    if expr.ty != Type::Boolean {
+                    if !matches!(expr.ty, Type::Boolean) {
                         diagnostics.push(Diagnostic::CantCoerceType {
                             range,
                             from: expr.ty.clone(),
@@ -811,7 +811,7 @@ fn type_expr(
             let range = expr.span.clone();
             let mut expr = type_expr(ast, scope, expr, diagnostics, source)?;
 
-            if expr.coerce_to(ty) {
+            if expr.coerce_to(ty, source) {
                 expr
             } else {
                 if !expr.can_cast(ty) {
@@ -862,7 +862,7 @@ fn type_expr(
 
                 let range = expr.span.clone();
                 if let Some(mut expr) = type_expr(ast, scope, expr, diagnostics, source) {
-                    if !expr.coerce_to(&field.ty) {
+                    if !expr.coerce_to(&field.ty, source) {
                         diagnostics.push(Diagnostic::CantCoerceType {
                             range,
                             from: expr.ty.clone(),
@@ -955,7 +955,7 @@ fn type_expr(
                 return None;
             };
 
-            if !idx.coerce_to(&Type::I64) {
+            if !idx.coerce_to(&Type::I64, source) {
                 diagnostics.push(Diagnostic::CantCoerceType {
                     range: index.span.clone(),
                     from: idx.ty.clone(),
@@ -1024,7 +1024,7 @@ fn type_binary_expr(
                     }
                 }
             } else {
-                coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan)?;
+                coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan, source)?;
                 let ty = lhs.ty.clone();
                 TypedExpr {
                     kind: TypedExprKind::Arithmetic {
@@ -1069,7 +1069,7 @@ fn type_binary_expr(
                     }
                 }
             } else {
-                coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan)?;
+                coerce_binary_nums(diagnostics, &mut lhs, &mut rhs, lspan, rspan, source)?;
                 TypedExpr {
                     kind: TypedExprKind::Comparison {
                         lhs: Box::new(lhs),
@@ -1081,7 +1081,7 @@ fn type_binary_expr(
             }
         }
         BinaryOp::Boolean(op) => {
-            if lhs.ty != Type::Boolean {
+            if !matches!(lhs.ty, Type::Boolean) {
                 diagnostics.push(Diagnostic::CantCoerceType {
                     range: lspan,
                     from: lhs.ty.clone(),
@@ -1090,7 +1090,7 @@ fn type_binary_expr(
                 return None;
             }
 
-            if rhs.ty != Type::Boolean {
+            if !matches!(rhs.ty, Type::Boolean) {
                 diagnostics.push(Diagnostic::CantCoerceType {
                     range: rspan,
                     from: rhs.ty.clone(),
@@ -1111,7 +1111,7 @@ fn type_binary_expr(
         BinaryOp::Assign => {
             let lhs = expr_to_place(lspan, lhs, diagnostics)?;
 
-            if !rhs.coerce_to(&lhs.ty) {
+            if !rhs.coerce_to(&lhs.ty, source) {
                 diagnostics.push(Diagnostic::CantCoerceType {
                     range: rspan,
                     from: rhs.ty,
@@ -1130,7 +1130,7 @@ fn type_binary_expr(
             }
         }
         BinaryOp::ArithmeticAssign(op) => {
-            if !rhs.coerce_to(&lhs.ty) {
+            if !rhs.coerce_to(&lhs.ty, source) {
                 diagnostics.push(Diagnostic::CantCoerceType {
                     range: rspan,
                     from: rhs.ty,
@@ -1183,6 +1183,7 @@ fn coerce_binary_nums(
     rhs: &mut TypedExpr,
     lspan: Range<usize>,
     rspan: Range<usize>,
+    source: &str,
 ) -> Option<()> {
     if lhs.ty.is_int() && rhs.ty.is_int() {
         coerce_binary(
@@ -1190,9 +1191,10 @@ fn coerce_binary_nums(
             rspan,
             lhs,
             rhs,
-            Type::UnsizedInt,
-            Type::I32,
+            // Type::UnsizedInt,
+            // Type::I32,
             diagnostics,
+            source,
         )?;
     } else if lhs.ty.is_float() && rhs.ty.is_float() {
         coerce_binary(
@@ -1200,9 +1202,10 @@ fn coerce_binary_nums(
             rspan,
             lhs,
             rhs,
-            Type::UnsizedFloat,
-            Type::F32,
+            // Type::UnsizedFloat,
+            // Type::F32,
             diagnostics,
+            source,
         )?;
     } else {
         diagnostics.push(Diagnostic::CantCoerceBinary {
@@ -1221,28 +1224,29 @@ fn coerce_binary(
     rspan: Range<usize>,
     lhs: &mut TypedExpr,
     rhs: &mut TypedExpr,
-    unsized_ty: Type,
-    default_ty: Type,
+    // unsized_ty: Type,
+    // default_ty: Type,
     diagnostics: &mut Vec<Diagnostic>,
+    source: &str,
 ) -> Option<()> {
-    use Type::*;
-    if lhs.ty == rhs.ty {
-        if lhs.ty == unsized_ty {
-            //TODO some back propagating inference or constant propagation?
-            //It's probably where I'd do bounds checking as well
-            //I have implemented constant folding using check_unsized_consts,
-            //but I'm not too happy about that, should return to it later
-            lhs.ty = default_ty.clone();
-            rhs.ty = default_ty;
-        }
-    } else if lhs.coerce_to(&rhs.ty) {
-    } else if rhs.coerce_to(&lhs.ty) {
-    } else if (lhs.ty == UnsizedFloat && rhs.ty == UnsizedInt)
-        || (rhs.ty == UnsizedFloat && lhs.ty == UnsizedInt)
-    {
-        //TODO: I'm not too sure if this check should be here
-        lhs.ty = F32;
-        rhs.ty = F32;
+    // use Type::*;
+    if lhs.ty.eq(&rhs.ty, source) {
+        // if lhs.ty == unsized_ty {
+        //     //TODO some back propagating inference or constant propagation?
+        //     //It's probably where I'd do bounds checking as well
+        //     //I have implemented constant folding using check_unsized_consts,
+        //     //but I'm not too happy about that, should return to it later
+        //     lhs.ty = default_ty.clone();
+        //     rhs.ty = default_ty;
+        // }
+    } else if lhs.coerce_to(&rhs.ty, source) {
+    } else if rhs.coerce_to(&lhs.ty, source) {
+        // } else if (lhs.ty == UnsizedFloat && rhs.ty == UnsizedInt)
+        //     || (rhs.ty == UnsizedFloat && lhs.ty == UnsizedInt)
+        // {
+        //     //TODO: I'm not too sure if this check should be here
+        //     lhs.ty = F32;
+        //     rhs.ty = F32;
     } else {
         diagnostics.push(Diagnostic::CantCoerceBinary {
             range: lspan.start..rspan.end,

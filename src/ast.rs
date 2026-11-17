@@ -35,13 +35,8 @@ pub struct FieldDecl {
     pub ident: Range<usize>,
     pub ty: Type,
 }
-impl PartialEq for FieldDecl {
-    fn eq(&self, other: &Self) -> bool {
-        self.ty == other.ty
-    }
-}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Type {
     UnsizedInt,
     I8,
@@ -71,6 +66,50 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn eq(&self, other: &Type, source: &str) -> bool {
+        use Type::*;
+        match (self, other) {
+            (UnsizedInt, UnsizedInt)
+            | (I8, I8)
+            | (U8, U8)
+            | (I16, I16)
+            | (U16, U16)
+            | (I32, I32)
+            | (U32, U32)
+            | (I64, I64)
+            | (U64, U64)
+            | (UnsizedFloat, UnsizedFloat)
+            | (F32, F32)
+            | (F64, F64)
+            | (Char, Char)
+            | (Boolean, Boolean)
+            | (Void, Void) => true,
+            (Pointer(l), Pointer(r)) => l.eq(r, source),
+            (
+                Fn {
+                    args,
+                    variadic,
+                    return_ty,
+                },
+                Fn {
+                    args: args2,
+                    variadic: variadic2,
+                    return_ty: ret2,
+                },
+            ) => {
+                for (l, r) in args.iter().zip(args2) {
+                    if !l.ty.eq(&r.ty, source) {
+                        return false;
+                    }
+                }
+
+                *variadic == *variadic2 && return_ty.eq(ret2, source)
+            }
+            (Struct(l), Struct(r)) => &source[l.clone()] == &source[r.clone()],
+            _ => false,
+        }
+    }
+
     pub fn is_numeric(&self) -> bool {
         use Type::*;
         matches!(

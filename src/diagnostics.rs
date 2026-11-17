@@ -6,6 +6,9 @@ use std::ops::Range;
 
 #[derive(Debug)]
 pub enum Diagnostic {
+    InvalidToken {
+        range: Range<usize>,
+    },
     UnexpectedToken {
         unexpected: Token,
         range: Range<usize>,
@@ -121,4 +124,122 @@ pub enum Diagnostic {
     IndexNonPtr {
         range: Range<usize>,
     },
+}
+
+pub fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &str) {
+    use Diagnostic::*;
+    for diagnostic in diagnostics {
+        match diagnostic {
+            UnexpectedToken {
+                unexpected,
+                range,
+                expected,
+            } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected {:#?}. line {}: `{}`\n{}",
+                    unexpected,
+                    expected,
+                    line - 1,
+                    &source[range.clone()],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            UnexpectedToken2 {
+                unexpected,
+                range,
+                expected,
+            } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected {}. line {}: `{}`\n{}",
+                    unexpected,
+                    expected,
+                    line - 1,
+                    &source[range.clone()],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            ExpectedType { unexpected, range } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected a type. line {}: `{}`\n{}",
+                    unexpected,
+                    line - 1,
+                    &source[range.clone()],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            EOF => println!(
+                "Unexpected end of file on line {}\n{}",
+                lines.len() - 2,
+                &source[lines[lines.len() - 2]..lines[lines.len() - 1]]
+            ),
+            ExpectedExpression { unexpected, range } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                println!(
+                    "Unexpected token: {}, expected an expression. line {}: `{}`\n{}",
+                    unexpected,
+                    line - 1,
+                    &source[range.clone()],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            CantCoerceType { range, from, to } => {
+                let line = lines.partition_point(|&l| l < range.start);
+                print!("Can't coerce type from ");
+                print_type(from, source);
+                print!(" to ");
+                print_type(to, source);
+                println!(
+                    " line {}: `{}`\n{}",
+                    line - 1,
+                    &source[range.clone()],
+                    &source[lines[line - 1]..lines[line]]
+                );
+            }
+            // NoVariableNamed { range } => {
+            //     let line = lines.partition_point(|&l| l < range.start);
+            //     println!(
+            //         "No variable named {}, line {}:\n{}",
+            //         &source[range.clone()],
+            //         line - 1,
+            //         &source[lines[line - 1]..lines[line]]
+            //     );
+            // }
+            _ => {
+                dbg!(diagnostic);
+            }
+        }
+    }
+}
+
+pub fn print_type(ty: &Type, source: &str) {
+    match ty {
+        Type::UnsizedInt => print!("{{int}}"),
+        Type::I8 => print!("i8"),
+        Type::U8 => print!("u8"),
+        Type::I16 => print!("i16"),
+        Type::U16 => print!("u16"),
+        Type::I32 => print!("i32"),
+        Type::U32 => print!("u32"),
+        Type::I64 => print!("i64"),
+        Type::U64 => print!("u64"),
+        Type::UnsizedFloat => print!("{{float}}"),
+        Type::F32 => print!("f32"),
+        Type::F64 => print!("f64"),
+        Type::Char => print!("char"),
+        Type::Pointer(ty) => {
+            print!("*");
+            print_type(ty, source);
+        }
+        Type::Fn {
+            args: _,
+            variadic: _,
+            return_ty: _,
+        } => todo!(),
+        Type::Boolean => print!("bool"),
+        Type::Void => print!("void"),
+        Type::Struct(range) => print!("{}", &source[range.clone()]),
+    }
 }
