@@ -682,56 +682,63 @@ fn type_expr(
                 typed_args.push(expr);
             }
 
-            // https://en.cppreference.com/c/language/conversion#Default_argument_promotions
-            for expr in &args[fn_args.len()..] {
-                let mut expr = type_expr(ast, scope, expr, diagnostics, source)?;
+            if args.len() > fn_args.len() {
+                if *variadic {
+                    // https://en.cppreference.com/c/language/conversion#Default_argument_promotions
+                    for expr in &args[fn_args.len()..] {
+                        let mut expr = type_expr(ast, scope, expr, diagnostics, source)?;
 
-                match &expr.ty {
-                    Type::UnsizedInt => {
-                        expr.ty = Type::I32;
-                    }
-                    Type::Boolean | Type::Char | Type::U8 | Type::I8 | Type::I16 | Type::U16 => {
-                        expr = TypedExpr {
-                            kind: TypedExprKind::Cast {
-                                expr: Box::new(expr),
-                                ty: Type::I32,
-                            },
-                            ty: Type::I32,
+                        match &expr.ty {
+                            Type::UnsizedInt => {
+                                expr.ty = Type::I32;
+                            }
+                            Type::Boolean
+                            | Type::Char
+                            | Type::U8
+                            | Type::I8
+                            | Type::I16
+                            | Type::U16 => {
+                                expr = TypedExpr {
+                                    kind: TypedExprKind::Cast {
+                                        expr: Box::new(expr),
+                                        ty: Type::I32,
+                                    },
+                                    ty: Type::I32,
+                                }
+                            }
+                            Type::I32 | Type::U32 | Type::I64 | Type::U64 => {}
+                            Type::UnsizedFloat => {
+                                expr.ty = Type::F64;
+                            }
+                            Type::F32 => {
+                                expr = TypedExpr {
+                                    kind: TypedExprKind::Cast {
+                                        expr: Box::new(expr),
+                                        ty: Type::F64,
+                                    },
+                                    ty: Type::F64,
+                                }
+                            }
+                            Type::F64 => {}
+                            Type::Pointer(_) => {}
+                            Type::Fn {
+                                args: _,
+                                variadic: _,
+                                return_ty: _,
+                            } => {}
+                            Type::Void => unreachable!(),
+                            Type::Struct(_) => {}
                         }
+
+                        typed_args.push(expr);
                     }
-                    Type::I32 | Type::U32 | Type::I64 | Type::U64 => {}
-                    Type::UnsizedFloat => {
-                        expr.ty = Type::F64;
-                    }
-                    Type::F32 => {
-                        expr = TypedExpr {
-                            kind: TypedExprKind::Cast {
-                                expr: Box::new(expr),
-                                ty: Type::F64,
-                            },
-                            ty: Type::F64,
-                        }
-                    }
-                    Type::F64 => {}
-                    Type::Pointer(_) => {}
-                    Type::Fn {
-                        args: _,
-                        variadic: _,
-                        return_ty: _,
-                    } => {}
-                    Type::Void => unreachable!(),
-                    Type::Struct(_) => {}
+                } else {
+                    diagnostics.push(Diagnostic::UnexpectedArgs {
+                        range,
+                        expected: fn_args.len(),
+                        got: args.len(),
+                    });
                 }
-
-                typed_args.push(expr);
-            }
-
-            if !variadic && args.len() > fn_args.len() {
-                diagnostics.push(Diagnostic::UnexpectedArgs {
-                    range,
-                    expected: fn_args.len(),
-                    got: args.len(),
-                });
             }
 
             let ty = *return_ty.clone();

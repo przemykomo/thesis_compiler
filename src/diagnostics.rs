@@ -126,89 +126,187 @@ pub enum Diagnostic {
     },
 }
 
+fn d(msg: &str, range: &Range<usize>, lines: &[usize], source: &str) {
+    let line = lines.partition_point(|&l| l < range.start) - 1;
+    let s = &source[range.clone()];
+    let mut line_src = &source[lines[line]..lines[line + 1]];
+    if line_src.ends_with('\n') {
+        line_src = &line_src[..line_src.len() - 1];
+    }
+    println!("Line {line}: {msg}: `{s}`\n{line_src}");
+    let col_start = range.start - lines[line];
+    let col_end = (range.end - lines[line]).min(lines[line + 1]);
+    print!("{: >width$}", "", width = col_start);
+    println!("{:^>width$}", "", width = col_end - col_start);
+}
+
 pub fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &str) {
     use Diagnostic::*;
     for diagnostic in diagnostics {
         match diagnostic {
+            InvalidToken { range } => {
+                d("Invalid token", range, lines, source);
+            }
             UnexpectedToken {
                 unexpected,
                 range,
                 expected,
             } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected {:#?}. line {}: `{}`\n{}",
-                    unexpected,
-                    expected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
+                d("Unexpected token", range, lines, source);
+                println!("Expected {expected:#?}, got {unexpected}.");
             }
             UnexpectedToken2 {
                 unexpected,
                 range,
                 expected,
             } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected {}. line {}: `{}`\n{}",
-                    unexpected,
-                    expected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
+                d("Unexpected token", range, lines, source);
+                println!("Expected {expected}, got {unexpected}.");
             }
-            ExpectedType { unexpected, range } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected a type. line {}: `{}`\n{}",
-                    unexpected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
+            ExpectedType {
+                unexpected: _,
+                range,
+            } => {
+                d("Expected a type", range, lines, source);
             }
             EOF => println!(
                 "Unexpected end of file on line {}\n{}",
                 lines.len() - 2,
                 &source[lines[lines.len() - 2]..lines[lines.len() - 1]]
             ),
-            ExpectedExpression { unexpected, range } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                println!(
-                    "Unexpected token: {}, expected an expression. line {}: `{}`\n{}",
-                    unexpected,
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
-                );
+            ExpectedExpression {
+                unexpected: _,
+                range,
+            } => {
+                d("Expected an expression", range, lines, source);
             }
             CantCoerceType { range, from, to } => {
-                let line = lines.partition_point(|&l| l < range.start);
-                print!("Can't coerce type from ");
+                d("Can't coerce type", range, lines, source);
+                print!("From ");
                 print_type(from, source);
                 print!(" to ");
                 print_type(to, source);
-                println!(
-                    " line {}: `{}`\n{}",
-                    line - 1,
-                    &source[range.clone()],
-                    &source[lines[line - 1]..lines[line]]
+                println!();
+            }
+            DuplicateDefinition { range, old } => {
+                d("Duplicate definition", range, lines, source);
+                d("Note: original definition:", old, lines, source);
+            }
+            EllipsisNotLast { range } => {
+                d("Ellipsis must be a last argument", range, lines, source);
+            }
+            VariadicFnDef { range } => {
+                d(
+                    "Only external declarations are supported for variadic functions",
+                    range,
+                    lines,
+                    source,
                 );
             }
-            // NoVariableNamed { range } => {
-            //     let line = lines.partition_point(|&l| l < range.start);
-            //     println!(
-            //         "No variable named {}, line {}:\n{}",
-            //         &source[range.clone()],
-            //         line - 1,
-            //         &source[lines[line - 1]..lines[line]]
-            //     );
-            // }
-            _ => {
-                dbg!(diagnostic);
+            NoTypeNamed { range } => {
+                d("Invalid type", range, lines, source);
+            }
+            RecursiveStruct { range } => {
+                d("Recursive struct definition", range, lines, source);
+            }
+            FunctionDoesntReturn { range } => {
+                d("Function doesn't return", range, lines, source);
+            }
+            MissingVariableType { range } => {
+                d("Missing variable type", range, lines, source);
+            }
+            VoidReturn { range, expected } => {
+                d("Trying to return without a value", range, lines, source);
+                print!("Expected a value of type: ");
+                print_type(expected, source);
+                println!();
+            }
+            NotALoop { range } => {
+                d("Not a loop", range, lines, source);
+            }
+            NoVariableOrFunction { range } => {
+                d("No variable or function", range, lines, source);
+            }
+            NoFieldNamed { range } => {
+                d("No field named", range, lines, source);
+            }
+            ExpectedField { expected, got } => {
+                d("Expected field", expected, lines, source);
+                d("Instead got", got, lines, source);
+            }
+            MissingFields { range, fields } => {
+                d("Missing fields from a struct literal", range, lines, source);
+                print!("Missing fields: ");
+                for f in fields {
+                    print!("{}: ", &source[f.ident.clone()]);
+                    print_type(&f.ty, source);
+                    print!(", ");
+                }
+                println!();
+            }
+            ExpectedNumericType { range, got } => {
+                d("Expected a numeric type", range, lines, source);
+                print!("Instead got ");
+                print_type(got, source);
+                println!();
+            }
+            DerefNonPointer { range, got } => {
+                d("Trying to dereference a non-pointer", range, lines, source);
+                print!("Instead got ");
+                print_type(got, source);
+                println!();
+            }
+            CantCoerceBinary { range, lhs, rhs } => {
+                d("Can't coerce types", range, lines, source);
+                print!("Types: ");
+                print_type(lhs, source);
+                print!(" and ");
+                print_type(rhs, source);
+                println!();
+            }
+            CantCast { range, from, to } => {
+                d("Can't cast", range, lines, source);
+                print!("From ");
+                print_type(from, source);
+                print!(" to ");
+                print_type(to, source);
+                println!();
+            }
+            NotAStruct { range } => {
+                d("Not a struct", range, lines, source);
+            }
+            NotAnLValue { range } => {
+                d("Not an lvalue", range, lines, source);
+            }
+            NotAFunction { range } => {
+                d("Not a function", range, lines, source);
+            }
+            MissingArgs {
+                range,
+                expected,
+                got,
+            } => {
+                d("Missing function arguments", range, lines, source);
+                println!("Expected {expected} arguments, got {got} instead.");
+            }
+            UnexpectedArgs {
+                range,
+                expected,
+                got,
+            } => {
+                d(
+                    "Additional function arguments provided",
+                    range,
+                    lines,
+                    source,
+                );
+                println!("Expected {expected} arguments, got {got} instead.");
+            }
+            NonASCIIChar { range } => {
+                d("Not an ascii character", range, lines, source);
+            }
+            IndexNonPtr { range } => {
+                d("Trying to index a non-pointer", range, lines, source);
             }
         }
     }
