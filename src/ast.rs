@@ -107,6 +107,7 @@ impl Type {
                 *variadic == *variadic2 && return_ty.eq(ret2, source)
             }
             (Struct(l), Struct(r)) => &source[l.clone()] == &source[r.clone()],
+            (Array(ty, len), Array(ty2, len2)) => *len == *len2 && ty.eq(ty2, source),
             _ => false,
         }
     }
@@ -147,7 +148,7 @@ impl Type {
     }
 
     pub fn is_scalar(&self) -> bool {
-        !matches!(self, Type::Struct(_))
+        !matches!(self, Type::Struct(_) | Type::Array(_, _))
     }
 }
 
@@ -224,6 +225,7 @@ pub enum ExprKind {
         expr: Box<Expr>,
         index: Box<Expr>,
     },
+    ArrayLiteral(Vec<Expr>),
 }
 
 // No bitwise operator for now

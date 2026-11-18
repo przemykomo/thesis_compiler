@@ -127,6 +127,9 @@ pub enum Diagnostic {
     IndexNonPtrArr {
         range: Range<usize>,
     },
+    ZeroSized {
+        range: Range<usize>,
+    },
 }
 
 fn d(msg: &str, range: &Range<usize>, lines: &[usize], source: &str) {
@@ -323,6 +326,9 @@ pub fn print_diagnostics(diagnostics: &[Diagnostic], lines: &[usize], source: &s
                     lines,
                     source,
                 );
+            }
+            ZeroSized { range } => {
+                d("Zero sized types are not supported", range, lines, source);
             }
         }
     }

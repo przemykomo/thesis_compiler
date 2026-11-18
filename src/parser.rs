@@ -660,6 +660,29 @@ fn parse_expr_atom(
             expect(Token::RParen, ast, tokens)?;
             return Some(expr);
         }
+        Token::LBracket => {
+            let start = tokens.next().unwrap();
+            let mut exprs = Vec::new();
+            loop {
+                if let Some(expr) = parse_expr(ast, tokens, condition, source) {
+                    exprs.push(expr);
+                } else {
+                    skip_to(tokens, &[Token::Comma, Token::RBracket])?;
+                }
+
+                if tokens.peek()?.0 == Token::RBracket {
+                    break;
+                }
+
+                expect(Token::Comma, ast, tokens);
+            }
+            let end = tokens.next().unwrap();
+
+            return Some(Expr {
+                kind: ExprKind::ArrayLiteral(exprs),
+                span: start.1.start..end.1.end,
+            });
+        }
         _ => {
             //TODO expected expression or a statement?
             ast.diagnostics.push(Diagnostic::ExpectedExpression {

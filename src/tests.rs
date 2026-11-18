@@ -288,4 +288,41 @@ mod tests {
         let status = Command::new("./out").output().unwrap();
         assert_eq!(str::from_utf8(&status.stdout).unwrap(), "1, 3.14, 2, 3",);
     }
+
+    #[test]
+    fn arrays() {
+        compile_and_link(
+            "out.o",
+            "out",
+            r#"
+                fn printf(format: *char, ...);
+                fn strcpy(dst: *char, src: *char) -> *char;
+
+                fn func(a: [i32; 3]) -> [i32; 3] {
+                    a[0] = 0;
+                    printf("%d, %d, %d\n", a[0], a[1], a[2]);
+                    return a;
+                }
+
+                fn main() -> i32 {
+                    let a: [i32; 3] = [1, 2, 3];
+                    let b = func(a);
+                    printf("%d, %d, %d\n", a[0], a[1], a[2]);
+                    printf("%d, %d, %d\n", b[0], b[1], b[2]);
+
+                    let str: [char; 16];
+                    strcpy(&str as *char, "Hello!");
+                    printf("%s\n", &str);
+                    return 0;
+                }
+        "#,
+        )
+        .unwrap();
+
+        let status = Command::new("./out").output().unwrap();
+        assert_eq!(
+            str::from_utf8(&status.stdout).unwrap(),
+            "0, 2, 3\n1, 2, 3\n0, 2, 3\nHello!\n"
+        );
+    }
 }

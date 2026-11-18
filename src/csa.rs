@@ -207,6 +207,7 @@ pub enum TypedExprKind {
         place: Box<Place>,
         index: Box<TypedExpr>,
     },
+    ArrayLiteral(Vec<TypedExpr>),
 }
 
 #[derive(Debug)]
@@ -995,6 +996,46 @@ fn type_expr(
                     },
                     ty,
                 }
+            }
+        }
+        ExprKind::ArrayLiteral(exprs) => {
+            let mut ty = None;
+            let mut typed = Vec::new();
+            let mut err = false;
+            for expr in exprs {
+                let Some(mut typed_expr) = type_expr(ast, scope, expr, diagnostics, source) else {
+                    err = true;
+                    continue;
+                };
+
+                if let Some(ty) = &ty {
+                    if !typed_expr.coerce_to(ty, source) {
+                        diagnostics.push(Diagnostic::CantCoerceType {
+                            range: expr.span.clone(),
+                            from: typed_expr.ty.clone(),
+                            to: ty.clone(),
+                        });
+                    }
+                } else {
+                    typed_expr.coerce_default();
+                    ty = Some(typed_expr.ty.clone());
+                }
+
+                typed.push(typed_expr);
+            }
+
+            if err {
+                return None;
+            }
+            let Some(ty) = ty else {
+                diagnostics.push(Diagnostic::ZeroSized {
+                    range: expr.span.clone(),
+                });
+                return None;
+            };
+            TypedExpr {
+                kind: TypedExprKind::ArrayLiteral(typed),
+                ty: Type::Array(Box::new(ty), exprs.len()),
             }
         }
     })

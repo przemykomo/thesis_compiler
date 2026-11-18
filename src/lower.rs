@@ -848,6 +848,31 @@ pub fn lower_expr(
                 );
                 LLVMBuildLoad2(builder, llvm_ty, ptr, c"".as_ptr())
             }
+            TypedExprKind::ArrayLiteral(exprs) => {
+                let mut val = LLVMGetPoison(to_llvm_type(context, &expr.ty, source, structs));
+
+                for (i, expr) in exprs.iter().enumerate() {
+                    val = LLVMBuildInsertValue(
+                        builder,
+                        val,
+                        lower_expr(
+                            expr,
+                            context,
+                            module,
+                            builder,
+                            vars,
+                            fn_ref,
+                            source,
+                            structs,
+                            data_layout,
+                        ),
+                        i as u32,
+                        c"".as_ptr(),
+                    );
+                }
+
+                val
+            }
         }
     }
 }

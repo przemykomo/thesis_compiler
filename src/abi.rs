@@ -152,6 +152,7 @@ fn create_abi_info(
                         }
                     }
                 }
+                //TODO array type
                 LLVMStructTypeInContext(context, members.as_mut_ptr(), members.len() as u32, 0)
             }
         };
@@ -418,8 +419,7 @@ fn classify_merge(
 
             // Final merger cleanup
             for i in 0..words {
-                /* If one class is MEMORY, everything should be passed in
-                memory.  */
+                // If one class is MEMORY, everything should be passed in memory.
                 if pieces[i].class == X64Class::CLASS_MEMORY {
                     return 0;
                 }
@@ -427,7 +427,62 @@ fn classify_merge(
 
             words
         },
-        Array(_, _) => todo!(),
+        Array(ty, len) => unsafe {
+            // Similar to struct
+            let llvm_ty = lower::to_llvm_type(context, ty, source, structs);
+            let stride = LLVMABISizeOfType(data_layout, llvm_ty) as usize;
+            let bytes = *len * stride;
+
+            if bytes > 16 {
+                return 0;
+            }
+
+            assert!(bytes > 0, "TODO: zero-sized types");
+
+            let mut subpieces = [Piece::new(X64Class::CLASS_NO_CLASS); 2];
+
+            const UNITS_PER_WORD: usize = 8;
+            let words = (bytes + byte_offset + UNITS_PER_WORD - 1) / UNITS_PER_WORD;
+
+            for i in 0..*len {
+                let offset = i * stride;
+                let byte_offset = byte_offset + offset;
+                let num = classify_merge(
+                    context,
+                    source,
+                    structs,
+                    data_layout,
+                    ty,
+                    &mut subpieces,
+                    byte_offset % 8,
+                );
+
+                if num == 0 {
+                    return 0;
+                }
+
+                let pos = byte_offset / 8;
+                let mut i = 0;
+                while i < num && (i + pos) < words {
+                    let subpiece = &subpieces[i];
+                    let piece = &mut pieces[i + pos];
+                    piece.vec = (piece.vec || subpiece.vec)
+                        && piece.class == X64Class::CLASS_SSE
+                        && subpiece.class == X64Class::CLASS_SSE;
+                    piece.class = merge_classes(subpiece.class, piece.class);
+                    piece.meaningful_bits = piece.meaningful_bits.max(subpiece.meaningful_bits);
+                    i += 1;
+                }
+            }
+
+            for i in 0..words {
+                if pieces[i].class == X64Class::CLASS_MEMORY {
+                    return 0;
+                }
+            }
+
+            words
+        },
     }
 }
 
